@@ -102,7 +102,7 @@ scripts/train_baseline.py --config configs/rgb1600.yml --resume runs/rgb1600/las
 每卡 batch 3、PyTorch 显存上限 8.5 GiB。
 
 数据、标注与划分文件、权重、训练输出、日志、图表、环境目录、备份和提交包由
-`.gitignore` 排除。代码提交不能代替数据和权重的独立备份。未配置远程仓库。
+`.gitignore` 排除。代码提交不能代替数据和权重的独立备份。远程仓库：<https://github.com/Acckion/aicomp>。
 
 首次在新副本启用提交检查：
 
