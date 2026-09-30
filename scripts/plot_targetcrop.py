@@ -129,7 +129,15 @@ def generate():
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--watch', action='store_true')
+    parser.add_argument('--next', action='store_true', help='Monitor shallow-detail ablation and optional full crop transfer')
     args = parser.parse_args()
+    if args.next:
+        OUT = ROOT / 'monitoring/detail'
+        RUNS = {n: RUNS[n] for n in ('targetcrop800', 'continue800_control')}
+        RUNS['detail800'] = ('浅层细节分支 · 1600', '#A9557D', '-.', 20)
+        decision = ROOT / 'experiments/after_targetcrop/decision.json'
+        if decision.exists() and json.loads(decision.read_text()).get('transfer_crop'):
+            RUNS['targetcrop2000'] = ('裁剪全量迁移 · 2000（无独立验证）', '#697349', ':', 15)
     OUT.mkdir(parents=True, exist_ok=True)
     lock = (OUT / 'plot.lock').open('w')
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)

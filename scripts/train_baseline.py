@@ -24,6 +24,7 @@ from src.solver._solver import BaseSolver
 from src.solver.det_engine import train_one_epoch, evaluate
 from schedule import WarmupCosine
 import target_views  # register train-only augmentation before YAML construction
+import detail_encoder  # optional RGB shallow-detail ablation
 
 
 def atomic_save(state, path):
@@ -45,8 +46,10 @@ class BaselineSolver(BaseSolver):
         matched, info = self._matched_state(current, weights)
         # AICOMP's 12 classes do not follow COCO/Objects365's class ordering.
         # Shape-mismatched classification layers are intentionally reinitialized.
-        if any('score_head' not in k and 'denoising_class_embed' not in k
-               for k in info['missed'] + info['unmatched']):
+        allowed_new = ('encoder.detail_branch.', 'encoder.detail_gate') if isinstance(self.model.encoder, detail_encoder.DetailHybridEncoder) else ()
+        invalid_missing = [k for k in info['missed'] if 'score_head' not in k and 'denoising_class_embed' not in k and not k.startswith(allowed_new)]
+        invalid_unmatched = [k for k in info['unmatched'] if 'score_head' not in k and 'denoising_class_embed' not in k]
+        if invalid_missing or invalid_unmatched:
             raise RuntimeError(f'Unexpected pretrained architecture mismatch: {info}')
         self.model.load_state_dict(matched, strict=False)
         print(f'Pretrained tensors loaded: {len(matched)}; reinitialized: {info}', flush=True)

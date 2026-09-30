@@ -9,6 +9,7 @@ from torchvision.ops import batched_nms, box_iou
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'D-FINE'))
 from src.core import YAMLConfig
+import detail_encoder
 from faster_coco_eval import COCO, COCOeval_faster
 
 
@@ -77,7 +78,7 @@ def windows(w,h,fraction):
 
 
 def main():
-    ap=argparse.ArgumentParser();ap.add_argument('--checkpoint',required=True);ap.add_argument('--size',type=int,default=640)
+    ap=argparse.ArgumentParser();ap.add_argument('--checkpoint',required=True);ap.add_argument('--config',help='Model configuration for an architecture ablation');ap.add_argument('--size',type=int,default=640)
     ap.add_argument('--tile',type=float,default=0);ap.add_argument('--output',required=True);ap.add_argument('--limit',type=int,default=0)
     ap.add_argument('--annotations',default=str(ROOT/'data/annotations/val400.json'))
     ap.add_argument('--image-root',default=str(ROOT/'data/train'))
@@ -96,6 +97,9 @@ def main():
     identity={'checkpoint_sha256':hashlib.file_digest(open(args.checkpoint,'rb'),'sha256').hexdigest(),
               'annotations_sha256':hashlib.sha256(ann.read_bytes()).hexdigest(),
               'image_root':str(Path(args.image_root).resolve()),'size':args.size,'tile':args.tile,'limit':args.limit}
+    if args.config:
+        config = YAMLConfig(args.config)
+        identity['resolved_model_config_sha256'] = hashlib.sha256(json.dumps(config.yaml_cfg,sort_keys=True,default=str).encode()).hexdigest()
     manifest=out/'cache_identity.json'
     if cache.exists():
         assert manifest.exists() and json.loads(manifest.read_text())==identity,'Stale prediction cache; use a new output directory'
@@ -103,7 +107,7 @@ def main():
     if cache.exists():preds=json.loads(cache.read_text())
     else:
         torch.cuda.set_per_process_memory_fraction(args.gpu_memory_limit_gib*1024**3/torch.cuda.get_device_properties(0).total_memory,0)
-        cfg=YAMLConfig(str(ROOT/'configs/rgb1600.yml'),eval_spatial_size=[args.size,args.size])
+        cfg=YAMLConfig(args.config or str(ROOT/'configs/rgb1600.yml'),eval_spatial_size=[args.size,args.size])
         model=cfg.model
         state=torch.load(args.checkpoint,map_location='cpu',weights_only=False)
         weights=state['ema']['module'] if 'ema' in state else state['model']
