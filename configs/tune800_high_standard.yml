@@ -1,0 +1,69 @@
+__include__:
+- /home/fbohan/AIC/configs/rgb1600.yml
+ema:
+  decay: 0.999
+  warmups: 1000
+epochs: 8
+eval_spatial_size:
+- 800
+- 800
+gpu_memory_limit_gib: 8.5
+gradient_accumulation_steps: 1
+min_lr_factor: 0.1
+optimizer:
+  lr: 1.5e-05
+  params:
+  - lr: 1.5000000000000002e-07
+    params: ^(?=.*backbone)(?!.*norm|bn).*$
+  - params: ^(?=.*(?:encoder|decoder))(?=.*(?:norm|bn)).*$
+    weight_decay: 0.0
+output_dir: /home/fbohan/AIC/runs/tune800_high_standard
+train_dataloader:
+  collate_fn:
+    base_size: 800
+    base_size_repeat: 3
+    stop_epoch: 999
+  dataset:
+    transforms:
+      ops:
+      - p: 0.5
+        type: RandomPhotometricDistort
+      - max_fraction: 0.7
+        max_target_area_fraction: 0.0025
+        min_fraction: 0.45
+        p: 0.0
+        type: MixedTargetViews
+        zoom_p: 0.5
+        iou_p: 0.8
+      - min_size: 1
+        type: SanitizeBoundingBoxes
+      - type: RandomHorizontalFlip
+      - size:
+        - 800
+        - 800
+        type: Resize
+      - min_size: 1
+        type: SanitizeBoundingBoxes
+      - dtype: float32
+        scale: true
+        type: ConvertPILImage
+      - fmt: cxcywh
+        normalize: true
+        type: ConvertBoxes
+      policy:
+        epoch: 999
+  total_batch_size: 9
+val_dataloader:
+  dataset:
+    transforms:
+      ops:
+      - size:
+        - 800
+        - 800
+        type: Resize
+      - dtype: float32
+        scale: true
+        type: ConvertPILImage
+  total_batch_size: 6
+warmup_epochs: 1
+find_unused_parameters: true

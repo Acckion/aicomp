@@ -27,13 +27,13 @@ def crop_target(image,target,left,top,width,height):
 
 @register()
 class MixedTargetViews(nn.Module):
-    def __init__(self,p=.35,min_fraction=.45,max_fraction=.7,max_target_area_fraction=.0025):
+    def __init__(self,p=.35,min_fraction=.45,max_fraction=.7,max_target_area_fraction=.0025,zoom_p=.5,iou_p=.8):
         super().__init__()
         assert 0<=p<=1 and 0<min_fraction<=max_fraction<=1
         self.p=p;self.min_fraction=min_fraction;self.max_fraction=max_fraction
         self.max_target_area_fraction=max_target_area_fraction
-        self.zoom=T.RandomZoomOut(fill=0)
-        self.iou=RandomIoUCrop(p=.8)
+        self.zoom=T.RandomZoomOut(fill=0,p=zoom_p)
+        self.iou=RandomIoUCrop(p=iou_p)
 
     def forward(self,*inputs):
         sample=inputs if len(inputs)>1 else inputs[0]

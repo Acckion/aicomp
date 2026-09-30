@@ -19,18 +19,30 @@ def select(pred, method='none', threshold=.6):
     labels=torch.tensor(pred['labels'],dtype=torch.long)
     if method=='nms':
         keep=batched_nms(boxes,scores,labels,threshold)[:100]
-    elif method=='soft':
+    elif method in ('soft','soft_gaussian'):
         remaining=torch.arange(len(scores)); chosen=[]
         while len(remaining) and len(chosen)<100:
             j=scores[remaining].argmax(); idx=remaining[j]; chosen.append(idx.item())
             remaining=remaining[remaining!=idx]
             if not len(remaining): break
             iou=box_iou(boxes[idx:idx+1],boxes[remaining])[0]
-            mask=(labels[remaining]==labels[idx]) & (iou>threshold)
-            scores[remaining[mask]]*=1-iou[mask]
+            same=labels[remaining]==labels[idx]
+            if method=='soft_gaussian':
+                if threshold<=0:raise ValueError('Gaussian Soft-NMS sigma must be positive')
+                scores[remaining[same]]*=torch.exp(-iou[same].square()/threshold)
+            else:
+                mask=same & (iou>threshold)
+                scores[remaining[mask]]*=1-iou[mask]
         keep=torch.tensor(chosen,dtype=torch.long)
     else: keep=scores.argsort(descending=True)[:100]
     return {'boxes':boxes[keep].tolist(),'scores':scores[keep].tolist(),'labels':labels[keep].tolist()}
+
+
+def restore_horizontal_boxes(boxes,width):
+    restored=boxes.clone()
+    restored[:,0]=width-boxes[:,2]
+    restored[:,2]=width-boxes[:,0]
+    return restored
 
 
 def encode_txt(pred,w,h):
@@ -79,12 +91,12 @@ def windows(w,h,fraction):
 
 def main():
     ap=argparse.ArgumentParser();ap.add_argument('--checkpoint',required=True);ap.add_argument('--config',help='Model configuration for an architecture ablation');ap.add_argument('--size',type=int,default=640)
-    ap.add_argument('--tile',type=float,default=0);ap.add_argument('--output',required=True);ap.add_argument('--limit',type=int,default=0)
+    ap.add_argument('--flip-tta',action='store_true');ap.add_argument('--expanded-soft',action='store_true');ap.add_argument('--tile',type=float,default=0);ap.add_argument('--output',required=True);ap.add_argument('--limit',type=int,default=0)
     ap.add_argument('--annotations',default=str(ROOT/'data/annotations/val400.json'))
     ap.add_argument('--image-root',default=str(ROOT/'data/train'))
     ap.add_argument('--predict-only',action='store_true')
     ap.add_argument('--gpu-memory-limit-gib',type=float,default=8.5)
-    ap.add_argument('--method',choices=['none','nms','soft'],default='none')
+    ap.add_argument('--method',choices=['none','nms','soft','soft_gaussian'],default='none')
     ap.add_argument('--threshold',type=float,default=.6)
     args=ap.parse_args();out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
     assert args.size % 32 == 0 and (args.tile == 0 or .5 <= args.tile < 1)
@@ -97,6 +109,7 @@ def main():
     identity={'checkpoint_sha256':hashlib.file_digest(open(args.checkpoint,'rb'),'sha256').hexdigest(),
               'annotations_sha256':hashlib.sha256(ann.read_bytes()).hexdigest(),
               'image_root':str(Path(args.image_root).resolve()),'size':args.size,'tile':args.tile,'limit':args.limit}
+    if args.flip_tta:identity['flip_tta']='horizontal_same_checkpoint_v1'
     if args.config:
         config = YAMLConfig(args.config)
         identity['resolved_model_config_sha256'] = hashlib.sha256(json.dumps(config.yaml_cfg,sort_keys=True,default=str).encode()).hexdigest()
@@ -124,15 +137,19 @@ def main():
                 views=windows(w,h,args.tile) if args.tile else [(0,0,w,h)]
                 for x,y,x2,y2 in views:
                     crop=image.crop((x,y,x2,y2))
-                    # Match validation's PIL bilinear resize and float32 inference.
+                    # Two independent views of one checkpoint; restore flip before merge.
                     tensor=TF.to_tensor(TF.resize(crop,[args.size,args.size])).unsqueeze(0).cuda()
-                    p=post(model(tensor),torch.tensor([[x2-x,y2-y]],device='cuda'))[0]
-                    if not args.tile:
-                        reference[str(im['id'])]={k:p[k].cpu().tolist() for k in ('boxes','scores','labels')}
-                    b=p['boxes'].cpu();b[:,[0,2]]+=x;b[:,[1,3]]+=y
-                    b[:,[0,2]]=b[:,[0,2]].clamp(0,w);b[:,[1,3]]=b[:,[1,3]].clamp(0,h)
-                    good=(b[:,2]>b[:,0]) & (b[:,3]>b[:,1])
-                    boxes.extend(b[good].tolist());scores.extend(p['scores'].cpu()[good].tolist());labels.extend(p['labels'].cpu()[good].tolist())
+                    for flipped in ([False,True] if args.flip_tta else [False]):
+                        inp=tensor.flip(-1) if flipped else tensor
+                        p=post(model(inp),torch.tensor([[x2-x,y2-y]],device='cuda'))[0]
+                        if not args.tile and not args.flip_tta:
+                            reference[str(im['id'])]={k:p[k].cpu().tolist() for k in ('boxes','scores','labels')}
+                        b=p['boxes'].cpu()
+                        if flipped:b=restore_horizontal_boxes(b,x2-x)
+                        b[:,[0,2]]+=x;b[:,[1,3]]+=y
+                        b[:,[0,2]]=b[:,[0,2]].clamp(0,w);b[:,[1,3]]=b[:,[1,3]].clamp(0,h)
+                        good=(b[:,2]>b[:,0]) & (b[:,3]>b[:,1])
+                        boxes.extend(b[good].tolist());scores.extend(p['scores'].cpu()[good].tolist());labels.extend(p['labels'].cpu()[good].tolist())
                 preds[str(im['id'])]={'boxes':boxes,'scores':scores,'labels':labels}
         cache.write_text(json.dumps(preds));manifest.write_text(json.dumps(identity,indent=2))
         if reference and not args.predict_only:
@@ -159,7 +176,9 @@ def main():
         raw=json.loads((out/'unclipped_reference.json').read_text())
         reference_result=evaluate(gt,{iid:select(p) for iid,p in raw.items()})
     results=[]
-    for method,threshold in [('none',0),('nms',.5),('nms',.6),('nms',.7),('soft',.5),('soft',.7)]:
+    variants=[('none',0),('nms',.5),('nms',.6),('nms',.7),('soft',.5),('soft',.7)]
+    if args.expanded_soft:variants += [('soft',.3),('soft',.6),('soft_gaussian',.3),('soft_gaussian',.5),('soft_gaussian',.7)]
+    for method,threshold in variants:
         selected={iid:select(p,method,threshold) for iid,p in preds.items()}
         row={'method':method,'threshold':threshold,**evaluate(gt,selected)}
         results.append(row)
@@ -173,7 +192,7 @@ def main():
             roundtrip=evaluate(gt,restored)
             row['txt_roundtrip_map']=roundtrip['map'];row['txt_roundtrip_delta']=roundtrip['map']-row['map']
             assert abs(row['txt_roundtrip_delta'])<.01,row
-    summary={'size':args.size,'tile_fraction':args.tile,'checkpoint':args.checkpoint,'images':len(images),'inference_seconds':inference_seconds,'unclipped_reference':reference_result,'results':results,'note':'Independent val400; scores are not leaderboard results. Full-image/crops use the same checkpoint.'}
+    summary={'flip_tta':args.flip_tta,'size':args.size,'tile_fraction':args.tile,'checkpoint':args.checkpoint,'images':len(images),'inference_seconds':inference_seconds,'unclipped_reference':reference_result,'results':results,'note':'Independent val400; scores are not leaderboard results. Full-image/crops use the same checkpoint.'}
     (out/'results.json').write_text(json.dumps(summary,indent=2));(out/'COMPLETE').write_text('ok\n')
     print(json.dumps(summary),flush=True)
 
