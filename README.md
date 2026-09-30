@@ -117,3 +117,16 @@ git config core.hooksPath .githooks
 
 自动后续流程使用 `scripts/next_baseline_stage.py`：当前验证微调完成后筛选收益，
 再迁移到 2000 张全量训练、复测推理配置并生成 phase2 候选包。
+
+
+### 夜间模型与上下文训练实验
+
+DEIMv2-L/X使用官方COCO预训练检测权重，RGB输入、AICOMP12类、本地训练。首次准备运行 `python scripts/prepare_deimv2.py`；离线复核运行 `python scripts/prepare_deimv2.py --offline`。源代码revision及权重SHA256固定在该脚本，源代码/权重置于Git忽略目录。额外依赖见 requirements_deimv2.txt，继续使用Miniconda AICOMP环境。
+
+启动 `python scripts/run_night_experiments.py --job l` 或 `--job x`；各自配置为configs/deimv2_l.yml、configs/deimv2_x.yml。先做峰值尺度训练和验证检查，成功才正式训练24轮。独立val400每轮评估mAP@50-95及类别AP；最后4轮关闭强增强。分类头适配12类，禁止套用COCO类别顺序。
+
+启动 `python scripts/run_night_experiments.py --job context`，依次训练contextmix800与contextfull800，各12轮，同一权重和配置，区别为局部视图概率.35与0。约65%整图保留上下文；局部视图锚选择按小目标尺寸和GT空间密度加权。仅使用官方训练标注，不使用测试训练或模型集成。全部实验完成后保留配对报告，不按本地分数自动声称phase2收益。
+
+`python scripts/plot_night_experiments.py`每分钟更新monitoring/night_experiments图表。三条队列各自记录后台进程、训练日志、失败原因和完成状态；已有未完成训练需显式处理，不能重复覆盖启动。
+
+DEIMv2独立推理使用 `scripts/evaluate_variants.py --backend deimv2 --config configs/deimv2_l.yml --checkpoint <EMA推理权重> --size 640 --output <新输出目录> --single-method --method none`，X需改为对应配置。该backend自动使用官方ImageNet归一化、保持AICOMP类别0–11、重建尺度相关buffer。`scripts/after_night_models.py`可独立后台等待两候选完成并生成最佳/最终轮的整体与困难子集报告；不会自动提交。

@@ -1,0 +1,5 @@
+# Additional dependencies; install after requirements.txt in AICOMP
+calflops==0.3.2
+transformers==4.46.3
+huggingface-hub==0.36.2
+safetensors==0.8.0

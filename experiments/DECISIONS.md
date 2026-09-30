@@ -113,3 +113,21 @@
 P2从ft_aug800 epoch20权重迁移，训练640、多尺度峰值800、20轮、2轮warmup/cosine、旧head LR2e-5/backbone2e-7，新支路1e-4、门控1e-3，有效batch9（每卡1、累积3），EMA和常规增强；GPU1/3/6，8.5GiB进程显存上限。零门控、严格权重迁移、旧注意力参数和anchor保持、CPU有限输出/优化器参数覆盖、真实数据加载检查通过；三卡峰值尺度12batch冒烟通过，包含rank2单批空GT。正式训练已启动，初始640 AP52.4858，与原模型同尺度52.4248接近；不能与800 AP直接作结构归因。
 
 scripts/after_p2.py独立等待训练COMPLETE，完成后在GPU7按空闲显存门槛评估P2最佳训练epoch和原模型，各自640/800原图推理，并跑相同密集/小目标子集诊断。输出最后5轮稳定性、同尺度总体/小目标/子集/常见类别变化；不自动按局部验证最优迁移全量或声明达到57。评测失败保留状态，不自动重启训练。scripts/plot_p2.py每60秒更新图表；AP仅来自完整epoch。
+
+
+## 2026-10-01：用户授权夜间并行DEIMv2与上下文局部训练
+
+用户确认RF-DETR-L已试过，弱于D-FINE-X，移出候选；授权试DEIMv2-L/X，并同时开展整图与保留上下文的局部训练。用户将睡觉、不再回复，要求成功启动并利用夜间时间；不依赖追加确认。P2按最新指示继续，不因新实验终止。
+
+已完成裁剪对照：targetcrop800最后5轮AP中位54.3196，普通续训53.8400（+0.4796）；小目标+0.7169；常见类别无>2点下降。此前相对普通续训的裁剪筛选通过，但不是phase2提升或突破证据。
+
+新增ContextTargetViews：每张训练图仍等概率进入训练；约65%保留整图，35%在存在小目标时取宽高比例.55–.8的局部视图，完整保留所选锚目标。局部锚选择按小目标尺寸与邻近目标密度加权，各权重有上限；不使用测试数据、预测伪标签或外部训练图。其他可见目标框正常裁剪并保留标签，空/尺寸不适合时退回整图。光度增强/翻转/800多尺度仍使用；不再对整图分支做ZoomOut/IoUCrop。因此新contextfull800是严格配对整图控制，不能直接与旧普通增强控制作纯采样归因。两组同起点ft_aug800 epoch20、seed、LR1e-5/backbone1e-7、EMA.999、有效batch9、sync_bn=False/find_unused=True、12轮；先contextmix800后contextfull800，GPU0/2/5。边界框/字段/面积/输入不变检查通过，三卡峰值992、6batch（含rank2单批空GT）冒烟通过。
+
+DEIMv2官方源revision 1d2ca42171570c713e78fc6a766ec5104b7f4724保存在忽略目录experiments/model_sources，prepare_deimv2.py可重建并核验；L/X官方COCO safetensors来源Intellindust Hugging Face，SHA256记录在脚本及本地provenance。完整DINOv3+STA+encoder+decoder加载，AICOMP12类分类/去噪embedding重置，恢复safetensors去重的up/reg_scale共享别名，严格拒绝其余丢失/尺寸不匹配。模型构造器的“from scratch”日志先于完整检测权重加载，不代表随机骨干开训。训练/推理均本地完成。
+
+DEIMv2-L在GPU7单卡batch6×累积2；X在GPU4单卡batch4×累积3；两者有效batch12、640多尺度480–800、24轮、2轮warmup/cosine、head LR1.5e-4/backbone5e-6、EMA.999、AMP/TF32、clip.1、8GiB上限，最后4轮关闭强增强与多尺度。保留官方ImageNet归一化和DEIMCriterion，不使用Mosaic/Mixup/CopyBlend作为首轮模型比较的额外变量；非严格同条件架构归因。通过峰值800的实际训练/EMA/验证测试，L峰值6650.8MiB、X6727.3MiB；正式训练已启动。第一轮12类分类从零适配，不能要求立即达到原模型已训练100+20轮的AP。
+
+run_night_experiments.py分别管理三条队列和失败状态，已有部分训练时拒绝覆盖；上下文两组完成后自动生成最后5轮总体/小目标/常见类别的配对筛选。plot_night_experiments.py每60秒更新总体mAP@50-95、尺寸/类别AP、loss/LR及进度，完整epoch之外不编造AP。输出与权重/数据继续Git忽略。DEIM运行GPU7期间P2后续离线评估会按空闲显存门槛等待，不叠加到训练卡。
+
+
+夜间启动补充：L已完成首轮训练、完整val400评估（12类指标）及模型/EMA/优化器/调度状态保存，并进入第2轮；上下文实验也完成首轮及权重保存。新分类头首轮AP低，不作为开训失败或新模型已超过baseline的证据。evaluate_variants.py新增独立deimv2 backend，使用官方ImageNet归一化，缓存身份包含backend，严格加载EMA权重并重建尺度buffer；800尺度两张验证图的完整预测/TXT往返检查通过。after_night_models.py等待L/X各24轮完成，自动比较最佳轮640/800及最终轮640，并生成相同val400密集/小目标子集诊断；某候选训练失败时记录并继续检查另一候选，不对失败模型生成结果。

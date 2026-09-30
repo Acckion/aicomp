@@ -92,6 +92,7 @@ def windows(w,h,fraction):
 
 def main():
     ap=argparse.ArgumentParser();ap.add_argument('--checkpoint',required=True);ap.add_argument('--config',help='Model configuration for an architecture ablation');ap.add_argument('--size',type=int,default=640)
+    ap.add_argument('--backend',choices=['dfine','deimv2'],default='dfine')
     ap.add_argument('--flip-tta',action='store_true');ap.add_argument('--expanded-soft',action='store_true');ap.add_argument('--tile',type=float,default=0);ap.add_argument('--output',required=True);ap.add_argument('--limit',type=int,default=0)
     ap.add_argument('--annotations',default=str(ROOT/'data/annotations/val400.json'))
     ap.add_argument('--image-root',default=str(ROOT/'data/train'))
@@ -101,6 +102,12 @@ def main():
     ap.add_argument('--method',choices=['none','nms','soft','soft_gaussian'],default='none')
     ap.add_argument('--threshold',type=float,default=.6)
     args=ap.parse_args();out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
+    ConfigType=YAMLConfig
+    if args.backend=='deimv2':
+        if not args.config:raise ValueError('DEIMv2 requires its architecture config')
+        sys.path.insert(0,str(ROOT/'experiments/model_sources/DEIMv2'))
+        from engine.core import YAMLConfig as DEIMConfig
+        ConfigType=DEIMConfig
     assert args.size % 32 == 0 and (args.tile == 0 or .5 <= args.tile < 1)
 
     torch.set_num_threads(2);torch.manual_seed(20260929)
@@ -112,8 +119,9 @@ def main():
               'annotations_sha256':hashlib.sha256(ann.read_bytes()).hexdigest(),
               'image_root':str(Path(args.image_root).resolve()),'size':args.size,'tile':args.tile,'limit':args.limit}
     if args.flip_tta:identity['flip_tta']='horizontal_same_checkpoint_v1'
+    if args.backend=='deimv2':identity['backend']='deimv2_imagenet_normalization_v1'
     if args.config:
-        config = YAMLConfig(args.config)
+        config = ConfigType(args.config)
         identity['resolved_model_config_sha256'] = hashlib.sha256(json.dumps(config.yaml_cfg,sort_keys=True,default=str).encode()).hexdigest()
     manifest=out/'cache_identity.json'
     if cache.exists():
@@ -122,7 +130,7 @@ def main():
     if cache.exists():preds=json.loads(cache.read_text())
     else:
         torch.cuda.set_per_process_memory_fraction(args.gpu_memory_limit_gib*1024**3/torch.cuda.get_device_properties(0).total_memory,0)
-        cfg=YAMLConfig(args.config or str(ROOT/'configs/rgb1600.yml'),eval_spatial_size=[args.size,args.size])
+        cfg=ConfigType(args.config or str(ROOT/'configs/rgb1600.yml'),eval_spatial_size=[args.size,args.size])
         model=cfg.model
         state=torch.load(args.checkpoint,map_location='cpu',weights_only=False)
         weights=state['ema']['module'] if 'ema' in state else state['model']
@@ -141,6 +149,7 @@ def main():
                     crop=image.crop((x,y,x2,y2))
                     # Two independent views of one checkpoint; restore flip before merge.
                     tensor=TF.to_tensor(TF.resize(crop,[args.size,args.size])).unsqueeze(0).cuda()
+                    if args.backend=='deimv2':tensor=TF.normalize(tensor,[.485,.456,.406],[.229,.224,.225])
                     for flipped in ([False,True] if args.flip_tta else [False]):
                         inp=tensor.flip(-1) if flipped else tensor
                         p=post(model(inp),torch.tensor([[x2-x,y2-y]],device='cuda'))[0]

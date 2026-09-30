@@ -56,3 +56,43 @@ class MixedTargetViews(nn.Module):
         # p=0 is the exact geometric-augmentation control.
         sample=self.zoom(sample)
         return self.iou(sample) if len(sample[1]['boxes']) else sample
+
+
+@register()
+class ContextTargetViews(nn.Module):
+    """Keep whole-image context in most views; emphasize small/dense anchors locally.
+
+    Image sampling remains uniform. Difficulty weights only select the local
+    anchor, avoiding replacement of ordinary scenes by repeated hard images.
+    """
+    def __init__(self,p=.35,min_fraction=.55,max_fraction=.8,
+                 max_target_area_fraction=.0025,density_radius=.12):
+        super().__init__()
+        assert 0<=p<=1 and 0<min_fraction<=max_fraction<=1
+        self.p=p;self.min_fraction=min_fraction;self.max_fraction=max_fraction
+        self.max_target_area_fraction=max_target_area_fraction
+        self.density_radius=density_radius
+
+    def forward(self,*inputs):
+        image,target,dataset=inputs if len(inputs)>1 else inputs[0]
+        if random.random()>=self.p:return image,target,dataset
+        width,height=image.size
+        boxes=target['boxes'].as_subclass(torch.Tensor)
+        areas=(boxes[:,2]-boxes[:,0])*(boxes[:,3]-boxes[:,1])/(width*height)
+        candidates=torch.where((areas>0)&(areas<=self.max_target_area_fraction))[0]
+        if not len(candidates):return image,target,dataset
+        centers=(boxes[:,:2]+boxes[:,2:])/2/torch.tensor([width,height])
+        density=(torch.cdist(centers[candidates],centers)<self.density_radius).sum(1).float()
+        # Bounded weights prevent one tiny annotation dominating selection.
+        size_weight=(self.max_target_area_fraction/areas[candidates]).sqrt().clamp(max=4)
+        weights=size_weight*density.sqrt().clamp(max=3)
+        selected=random.choices(candidates.tolist(),weights=weights.tolist(),k=1)[0]
+        anchor=boxes[selected]
+        fraction=random.uniform(self.min_fraction,self.max_fraction)
+        cw,ch=max(2,round(width*fraction)),max(2,round(height*fraction))
+        lx,hx=max(0,float(anchor[2])-cw),min(float(anchor[0]),width-cw)
+        ly,hy=max(0,float(anchor[3])-ch),min(float(anchor[1]),height-ch)
+        if lx>hx or ly>hy:return image,target,dataset
+        left,top=round(random.uniform(lx,hx)),round(random.uniform(ly,hy))
+        image,target=crop_target(image,target,left,top,cw,ch)
+        return image,target,dataset
