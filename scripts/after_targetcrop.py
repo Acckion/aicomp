@@ -1,5 +1,5 @@
 """After matched crop/control runs finish, screen gains and launch next ablations."""
-import os, sys, json, time, fcntl, statistics, subprocess, traceback
+import os, sys, json, time, fcntl, statistics, subprocess, traceback, argparse
 from pathlib import Path
 import yaml
 ROOT=Path(__file__).resolve().parents[1]
@@ -47,20 +47,25 @@ def launch(config,weights,gpus,port,name,eval_init=False):
     return p
 
 
-def main():
+def main(skip_control=False):
     OUT.mkdir(parents=True,exist_ok=True)
     lock=(OUT/'queue.lock').open('w');fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
-    write('waiting_for_crop_control_and_packages')
-    while True:
-        p=ROOT/'experiments/targetcrop/status.json';s=json.loads(p.read_text()) if p.exists() else {}
-        q=ROOT/'experiments/next_stage/status.json';t=json.loads(q.read_text()) if q.exists() else {}
-        if s.get('stage')=='failed' or t.get('stage')=='failed':raise RuntimeError('Dependency failed; inspect upstream status before continuing')
-        if all((ROOT/'runs'/n/'COMPLETE').exists() for n in ('targetcrop800','continue800_control')) and t.get('stage')=='packages_ready_for_submission':break
-        time.sleep(5)
-    ann=json.loads((ROOT/'data/annotations/val400.json').read_text())
-    counts={c['name']:sum(a['category_id']==c['id'] for a in ann['annotations']) for c in ann['categories']}
-    initial=json.loads((ROOT/'runs/targetcrop800/initial_metrics.json').read_text())['coco_eval_bbox']
-    decision=choose(records('targetcrop800'),records('continue800_control'),initial,counts)
+    if skip_control:
+        if not (ROOT/'runs/targetcrop800/COMPLETE').exists():
+            raise RuntimeError('Crop experiment must finish before proceeding')
+        decision={'transfer_crop':False,'control_skipped_by_user':True,'note':'User requested immediate structural optimization. No paired continuation attribution or crop promotion decision is claimed.'}
+    else:
+        write('waiting_for_crop_control_and_packages')
+        while True:
+            p=ROOT/'experiments/targetcrop/status.json';s=json.loads(p.read_text()) if p.exists() else {}
+            q=ROOT/'experiments/next_stage/status.json';t=json.loads(q.read_text()) if q.exists() else {}
+            if s.get('stage')=='failed' or t.get('stage')=='failed':raise RuntimeError('Dependency failed; inspect upstream status before continuing')
+            if all((ROOT/'runs'/n/'COMPLETE').exists() for n in ('targetcrop800','continue800_control')) and t.get('stage')=='packages_ready_for_submission':break
+            time.sleep(5)
+        ann=json.loads((ROOT/'data/annotations/val400.json').read_text())
+        counts={c['name']:sum(a['category_id']==c['id'] for a in ann['annotations']) for c in ann['categories']}
+        initial=json.loads((ROOT/'runs/targetcrop800/initial_metrics.json').read_text())['coco_eval_bbox']
+        decision=choose(records('targetcrop800'),records('continue800_control'),initial,counts)
     (OUT/'decision.json').write_text(json.dumps(decision,indent=2))
     jobs=[]
     with (OUT/'plot.log').open('a') as log:
@@ -95,6 +100,7 @@ def main():
 
 
 if __name__=='__main__':
-    try:main()
+    parser=argparse.ArgumentParser();parser.add_argument('--skip-control',action='store_true');args=parser.parse_args()
+    try:main(args.skip_control)
     except Exception:
         write('failed',traceback=traceback.format_exc());raise

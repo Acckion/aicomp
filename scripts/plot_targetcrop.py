@@ -133,7 +133,9 @@ if __name__ == '__main__':
     args = parser.parse_args()
     if args.next:
         OUT = ROOT / 'monitoring/detail'
-        RUNS = {n: RUNS[n] for n in ('targetcrop800', 'continue800_control')}
+        decision = ROOT / 'experiments/after_targetcrop/decision.json'
+        skipped = decision.exists() and json.loads(decision.read_text()).get('control_skipped_by_user')
+        RUNS = {n: RUNS[n] for n in (('targetcrop800',) if skipped else ('targetcrop800', 'continue800_control'))}
         RUNS['detail800'] = ('浅层细节分支 · 1600', '#A9557D', '-.', 20)
         decision = ROOT / 'experiments/after_targetcrop/decision.json'
         if decision.exists() and json.loads(decision.read_text()).get('transfer_crop'):

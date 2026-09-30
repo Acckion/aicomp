@@ -1,4 +1,4 @@
-"""Run target-crop trial, then its matched continuation control after packaging."""
+"""Run target-crop trial, then its matched continuation control on the released crop GPUs."""
 import os,sys,time,json,subprocess,fcntl,traceback
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1];OUT=ROOT/'experiments/targetcrop';OUT.mkdir(parents=True,exist_ok=True)
@@ -26,14 +26,7 @@ def run(name,gpus,port):
 def main():
     lock=(OUT/'queue.lock').open('w');fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
     run('targetcrop800',[0,2,5],29911)
-    # Avoid colliding with full-data training and queued phase2 package generation.
-    status('waiting_for_full_data_packages')
-    while True:
-        p=ROOT/'experiments/next_stage/status.json';data=json.loads(p.read_text())
-        if data['stage']=='packages_ready_for_submission':break
-        if data['stage']=='failed':raise RuntimeError('Full-data/package stage failed')
-        time.sleep(30)
-    run('continue800_control',[3,4,6],29912)
+    run('continue800_control',[0,2,5],29912)
     reports={}
     for name in ('targetcrop800','continue800_control'):
         rows=[json.loads(s) for s in (ROOT/'runs'/name/'metrics.jsonl').read_text().splitlines()]
