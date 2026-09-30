@@ -9,6 +9,7 @@ from torchvision.ops import batched_nms, box_iou
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'D-FINE'))
 from src.core import YAMLConfig
+import p2_encoder
 import detail_encoder
 from faster_coco_eval import COCO, COCOeval_faster
 
@@ -95,6 +96,7 @@ def main():
     ap.add_argument('--annotations',default=str(ROOT/'data/annotations/val400.json'))
     ap.add_argument('--image-root',default=str(ROOT/'data/train'))
     ap.add_argument('--predict-only',action='store_true')
+    ap.add_argument('--single-method',action='store_true',help='Evaluate only --method/--threshold instead of the default postprocessing sweep')
     ap.add_argument('--gpu-memory-limit-gib',type=float,default=8.5)
     ap.add_argument('--method',choices=['none','nms','soft','soft_gaussian'],default='none')
     ap.add_argument('--threshold',type=float,default=.6)
@@ -178,6 +180,7 @@ def main():
     results=[]
     variants=[('none',0),('nms',.5),('nms',.6),('nms',.7),('soft',.5),('soft',.7)]
     if args.expanded_soft:variants += [('soft',.3),('soft',.6),('soft_gaussian',.3),('soft_gaussian',.5),('soft_gaussian',.7)]
+    if args.single_method:variants=[(args.method,0 if args.method=='none' else args.threshold)]
     for method,threshold in variants:
         selected={iid:select(p,method,threshold) for iid,p in preds.items()}
         row={'method':method,'threshold':threshold,**evaluate(gt,selected)}

@@ -742,7 +742,7 @@ class DFINETransformer(nn.Module):
             grid_y, grid_x = torch.meshgrid(torch.arange(h), torch.arange(w), indexing="ij")
             grid_xy = torch.stack([grid_x, grid_y], dim=-1)
             grid_xy = (grid_xy.unsqueeze(0) + 0.5) / torch.tensor([w, h], dtype=dtype)
-            wh = torch.ones_like(grid_xy) * grid_size * (2.0**lvl)
+            wh = torch.ones_like(grid_xy) * grid_size * (self.feat_strides[lvl] / 8.0)
             lvl_anchors = torch.concat([grid_xy, wh], dim=-1).reshape(-1, h * w, 4)
             anchors.append(lvl_anchors)
 

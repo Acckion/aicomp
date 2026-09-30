@@ -24,6 +24,7 @@ from src.solver._solver import BaseSolver
 from src.solver.det_engine import train_one_epoch, evaluate
 from schedule import WarmupCosine
 import target_views  # register train-only augmentation before YAML construction
+import p2_encoder
 import detail_encoder  # optional RGB shallow-detail ablation
 
 

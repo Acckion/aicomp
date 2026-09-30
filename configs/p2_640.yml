@@ -1,0 +1,113 @@
+__include__:
+- /home/fbohan/AIC/configs/rgb1600.yml
+ema:
+  decay: 0.999
+  warmups: 1000
+epochs: 20
+eval_spatial_size:
+- 640
+- 640
+gpu_memory_limit_gib: 8.5
+gradient_accumulation_steps: 3
+min_lr_factor: 0.1
+optimizer:
+  lr: 2.0e-05
+  params:
+  - lr: 2.0e-07
+    params: ^(?=.*backbone)(?!.*norm|bn).*$
+  - params: ^(?=.*(?:encoder|decoder))(?=.*(?:norm|bn)).*$
+    weight_decay: 0.0
+  - params: ^encoder\.p2_detail\.
+    lr: 0.0001
+    weight_decay: 0.0
+  - params: ^encoder\.p2_gate$
+    lr: 0.001
+    weight_decay: 0.0
+output_dir: /home/fbohan/AIC/runs/p2_640
+train_dataloader:
+  collate_fn:
+    base_size: 640
+    base_size_repeat: 3
+    stop_epoch: 999
+  dataset:
+    transforms:
+      ops:
+      - type: RandomPhotometricDistort
+        p: 0.5
+      - type: MixedTargetViews
+        p: 0.0
+        min_fraction: 0.45
+        max_fraction: 0.7
+        max_target_area_fraction: 0.0025
+      - type: SanitizeBoundingBoxes
+        min_size: 1
+      - type: RandomHorizontalFlip
+      - type: Resize
+        size:
+        - 640
+        - 640
+      - type: SanitizeBoundingBoxes
+        min_size: 1
+      - type: ConvertPILImage
+        dtype: float32
+        scale: true
+      - type: ConvertBoxes
+        fmt: cxcywh
+        normalize: true
+      policy:
+        epoch: 999
+  total_batch_size: 3
+val_dataloader:
+  dataset:
+    transforms:
+      ops:
+      - size:
+        - 640
+        - 640
+        type: Resize
+      - dtype: float32
+        scale: true
+        type: ConvertPILImage
+  total_batch_size: 6
+warmup_epochs: 2
+find_unused_parameters: true
+sync_bn: false
+DFINE:
+  encoder: P2HybridEncoder
+HGNetv2:
+  return_idx:
+  - 0
+  - 1
+  - 2
+  - 3
+P2HybridEncoder:
+  in_channels:
+  - 512
+  - 1024
+  - 2048
+  feat_strides:
+  - 8
+  - 16
+  - 32
+  hidden_dim: 384
+  dim_feedforward: 2048
+  freeze_bn_stats: true
+DFINETransformer:
+  feat_channels:
+  - 384
+  - 384
+  - 384
+  - 384
+  feat_strides:
+  - 4
+  - 8
+  - 16
+  - 32
+  num_levels: 4
+  num_points:
+  - 3
+  - 3
+  - 6
+  - 3
+smoke_steps: 12
+smoke_empty_rank: 2
