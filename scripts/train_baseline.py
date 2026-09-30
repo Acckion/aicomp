@@ -23,6 +23,7 @@ from src.misc import dist_utils
 from src.solver._solver import BaseSolver
 from src.solver.det_engine import train_one_epoch, evaluate
 from schedule import WarmupCosine
+import target_views  # register train-only augmentation before YAML construction
 
 
 def atomic_save(state, path):
