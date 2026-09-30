@@ -1,0 +1,55 @@
+# Official/private datasets and generated annotations/splits
+/data/
+/初赛数据集*/
+# Training outputs, model artifacts, runtime environments and local backups
+/runs/
+/checkpoints/
+/backups/
+/logs/
+/monitoring/
+/experiments/*
+!/experiments/DECISIONS.md
+/miniconda*/
+/.conda/
+/.venv/
+/venv/
+# Large binaries and archives, wherever placed
+*.pth
+*.pt
+*.ckpt
+*.safetensors
+*.onnx
+*.engine
+*.pkl
+*.pickle
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.gz
+*.7z
+*.rar
+*.npy
+*.npz
+*.png
+*.jpg
+*.jpeg
+*.tif
+*.tiff
+*.bmp
+*.mp4
+*.avi
+# Runtime caches and local credentials
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+*.log
+*.pid
+*.lock
+*.tmp
+.env
+.env.*
+.ssh/
+*.pem
+*.key

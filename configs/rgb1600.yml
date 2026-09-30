@@ -1,0 +1,6 @@
+__include__: ['./baseline_common.yml']
+validate: True
+output_dir: /home/fbohan/AIC/runs/rgb1600
+train_dataloader:
+  dataset:
+    ann_file: /home/fbohan/AIC/data/annotations/train1600.json

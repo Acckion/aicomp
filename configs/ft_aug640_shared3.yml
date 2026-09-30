@@ -1,0 +1,65 @@
+__include__:
+- /home/fbohan/AIC/configs/rgb1600.yml
+output_dir: /home/fbohan/AIC/runs/ft_aug640
+epochs: 20
+warmup_epochs: 1
+min_lr_factor: 0.1
+eval_spatial_size:
+- 640
+- 640
+optimizer:
+  lr: 2.8125e-05
+  params:
+  - params: ^(?=.*backbone)(?!.*norm|bn).*$
+    lr: 2.8125e-07
+  - params: ^(?=.*(?:encoder|decoder))(?=.*(?:norm|bn)).*$
+    weight_decay: 0.0
+ema:
+  decay: 0.999
+  warmups: 1000
+train_dataloader:
+  total_batch_size: 9
+  dataset:
+    transforms:
+      policy:
+        epoch: 999
+      ops:
+      - type: RandomPhotometricDistort
+        p: 0.5
+      - type: RandomZoomOut
+        fill: 0
+      - type: RandomIoUCrop
+        p: 0.8
+      - type: SanitizeBoundingBoxes
+        min_size: 1
+      - type: RandomHorizontalFlip
+      - type: Resize
+        size:
+        - 640
+        - 640
+      - type: SanitizeBoundingBoxes
+        min_size: 1
+      - type: ConvertPILImage
+        dtype: float32
+        scale: true
+      - type: ConvertBoxes
+        fmt: cxcywh
+        normalize: true
+  collate_fn:
+    base_size: 640
+    base_size_repeat: 3
+    stop_epoch: 999
+val_dataloader:
+  total_batch_size: 6
+  dataset:
+    transforms:
+      ops:
+      - type: Resize
+        size:
+        - 640
+        - 640
+      - type: ConvertPILImage
+        dtype: float32
+        scale: true
+gradient_accumulation_steps: 1
+gpu_memory_limit_gib: 8.5

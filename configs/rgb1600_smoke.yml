@@ -1,0 +1,2 @@
+__include__: ['./rgb1600.yml']
+output_dir: /home/fbohan/AIC/runs/smoke_rgb1600

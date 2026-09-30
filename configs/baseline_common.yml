@@ -1,0 +1,63 @@
+__include__: ['../D-FINE/configs/dfine/custom/dfine_hgnetv2_x_custom.yml']
+
+num_classes: 12
+remap_mscoco_category: False
+epochs: 100
+warmup_epochs: 3
+min_lr_factor: 0.01
+# The custom runner owns the per-step schedule; disable inherited epoch schedulers.
+lr_scheduler: null
+lr_warmup_scheduler: null
+use_amp: True
+use_ema: True
+use_wandb: False
+sync_bn: True
+find_unused_parameters: False
+clip_max_norm: 0.1
+print_freq: 10
+checkpoint_freq: 5
+
+HGNetv2:
+  pretrained: False
+
+ema:
+  decay: 0.9999
+  warmups: 1000
+
+# Preserve official fine-tuning LR groups. The runner applies a step-wise
+# 3-epoch linear warmup, followed by cosine decay to 1% of EACH group's peak LR.
+optimizer:
+  type: AdamW
+  lr: 0.00025
+  betas: [0.9, 0.999]
+  weight_decay: 0.000125
+  params:
+    - params: '^(?=.*backbone)(?!.*norm|bn).*$'
+      lr: 0.0000025
+    - params: '^(?=.*(?:encoder|decoder))(?=.*(?:norm|bn)).*$'
+      weight_decay: 0.
+
+DFINEPostProcessor:
+  num_top_queries: 100
+
+train_dataloader:
+  total_batch_size: 32
+  num_workers: 6
+  pin_memory: True
+  dataset:
+    img_folder: /home/fbohan/AIC/data/train
+    transforms:
+      policy:
+        epoch: 90
+  collate_fn:
+    base_size: 640
+    base_size_repeat: 3
+    stop_epoch: 90
+
+val_dataloader:
+  total_batch_size: 32
+  num_workers: 4
+  pin_memory: True
+  dataset:
+    img_folder: /home/fbohan/AIC/data/train
+    ann_file: /home/fbohan/AIC/data/annotations/val400.json
