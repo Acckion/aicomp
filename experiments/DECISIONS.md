@@ -50,3 +50,10 @@
 - after_targetcrop.py --skip-control 立即准备 detail800 三卡训练，不再等待对照或全量提交包。此路线不宣称已做配对归因，也不自动根据缺失对照的裁剪结果作全量推广决定。
 - 全量训练的原等待控制器由 package_full_stage.py 接管：已有训练进程保持运行，完成后在 GPU3/4/6 生成包。相同权重、相同推理设置的候选去重，节省推理和提交次数。
 - detail800 使用 GPU0/2/5；全量训练及其打包使用另一组卡。monitoring/detail 省略被跳过的对照曲线。
+
+## 细节分支首轮中断与恢复
+
+- 首次正式训练在首轮10个batch之后发生 NCCL collective 次序/尺寸不一致并超时，没有完整 epoch 或权重保存；失败日志和起点指标保留在 experiments/after_targetcrop。
+- detail800 改为 find_unused_parameters=True、sync_bn=False；不改变其他已运行训练配置。三卡18 batch回归测试通过，包含rank2单批全部空目标，检验各卡目标数/去噪分支不同情况下的同步。
+- 从原始微调权重重新开始，不宣称恢复了未保存的更新。同步超时具体触发点仍需区分条件分支与其他通信因素；回归测试通过不是单独的根因证明。
+- scripts/plot_current_training.py 显示当前细节分支完整epoch验证值、轮内累计loss（失败与重启尝试分开），以及全量训练loss/LR/进度；未完成的epoch不编造AP。20分钟自动更新。

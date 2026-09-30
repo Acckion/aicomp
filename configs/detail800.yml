@@ -90,3 +90,7 @@ DetailHybridEncoder:
   hidden_dim: 384
   dim_feedforward: 2048
   detail_channels: 128
+find_unused_parameters: true
+sync_bn: false
+smoke_steps: 18
+smoke_empty_rank: 2

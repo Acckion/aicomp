@@ -134,7 +134,17 @@ def main():
         peak = max(solver.train_dataloader.collate_fn.scales or [cfg.yaml_cfg.get('eval_spatial_size', [640])[0]])
         solver.train_dataloader.collate_fn.scales = [peak]
         batches = iter(solver.train_dataloader)
-        smoke_batches = [next(batches) for _ in range(max(2, accumulation))]
+        smoke_batches = [next(batches) for _ in range(max(2, accumulation, cfg.yaml_cfg.get('smoke_steps', 2)))]
+        if cfg.yaml_cfg.get('smoke_empty_rank') == rank:
+            # Reproduce rank-dependent empty-target branches without altering data.
+            samples, targets = smoke_batches[3]
+            empty = []
+            for target in targets:
+                target = dict(target)
+                for key in ('boxes', 'labels', 'area', 'iscrowd'):
+                    if key in target: target[key] = target[key][:0]
+                empty.append(target)
+            smoke_batches[3] = (samples, empty)
         train_one_epoch(solver.model, solver.criterion, smoke_batches,
                         solver.optimizer, solver.device, 0, False, max_norm=cfg.clip_max_norm,
                         ema=solver.ema, scaler=solver.scaler, print_freq=1,
