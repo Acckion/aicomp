@@ -80,3 +80,11 @@
 - GPU0/2/5跑原增强低LR然后高LR；GPU1/3/6跑温和增强低LR然后高LR；GPU7做推理与各训练候选最佳权重的同模型TTA对照。GPU4空闲显存低于门槛，未使用。
 - 两组低LR三卡冒烟检查已通过；GPU7推理对照与训练并行。CPU测试通过翻转坐标双重恢复、类别内Gaussian衰减、不修改原始预测、TXT往返。
 - plots/light_tuning对应monitoring/light_tuning：每1分钟更新总体/尺寸/类别AP、loss、LR和已完成的推理对照。完整比较保存在experiments/light_tuning/comparison.json；不把本地增益当成phase2分数。
+
+## 用户恢复要求：补跑裁剪的普通续训对照
+
+- 重新授权continue800_control，15轮、LR1e-5、三卡有效batch9，同一ft_aug800第20轮权重、seed、EMA、warmup/cosine、原增强与800多尺度；与targetcrop800配置相比仅crop概率从.35改为0和输出目录不同，配置一致性断言通过。
+- 曾取消的control目录无metrics.jsonl/COMPLETE，只保留了初始化/冒烟输出，已移到runs/continue800_control_cancelled_时间戳，不删除或混入新结果。
+- queue_crop_control.py等待GPU0/2/5上的tune800_high_standard完成并释放显存，随后自动调用原targetcrop控制器；已完成的裁剪不重跑。避免与仍在跑的四组调参抢卡，保持相同三卡条件。
+- 完成后生成裁剪/续训完整对照及最后5轮总体、小目标、常见类别的相对筛选结果；不自动重新启动已止损的细节分支。
+- plot_crop_control.py每分钟更新monitoring/crop_control总体、类别、loss曲线；此前跳过对照的决定由当前用户请求替代。
