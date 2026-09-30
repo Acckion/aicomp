@@ -68,4 +68,4 @@ if __name__=='__main__':
  while True:
   generate(args.cached)
   if not args.watch or all((ROOT/'runs'/n/'COMPLETE').exists() for n in ('detail800','ft2000_aug800')):break
-  time.sleep(1200)
+  time.sleep(60)

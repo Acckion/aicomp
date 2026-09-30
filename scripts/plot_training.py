@@ -153,4 +153,4 @@ if __name__=='__main__':
         if sig!=last:
             generate(); last=sig
         if not args.watch or all((ROOT/'runs'/n/'COMPLETE').exists() for n in NAMES): break
-        time.sleep(1200)
+        time.sleep(60)

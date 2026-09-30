@@ -1,4 +1,4 @@
-"""Snapshot target-view experiment, paired control, and full-data transfer every 20 min."""
+"""Snapshot target-view experiment, paired control, and full-data transfer every minute."""
 import os
 os.environ.setdefault('MPLBACKEND', 'Agg')
 import argparse, csv, fcntl, hashlib, json, math, time
@@ -131,6 +131,9 @@ if __name__ == '__main__':
     parser.add_argument('--watch', action='store_true')
     parser.add_argument('--next', action='store_true', help='Monitor shallow-detail ablation and optional full crop transfer')
     args = parser.parse_args()
+    decision_path = ROOT / 'experiments/after_targetcrop/decision.json'
+    if decision_path.exists() and json.loads(decision_path.read_text()).get('control_skipped_by_user'):
+        RUNS.pop('continue800_control', None)
     if args.next:
         OUT = ROOT / 'monitoring/detail'
         decision = ROOT / 'experiments/after_targetcrop/decision.json'
@@ -144,9 +147,9 @@ if __name__ == '__main__':
     lock = (OUT / 'plot.lock').open('w')
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     if args.watch and (OUT / 'status.json').exists():
-        time.sleep(max(0, 1200 - (time.time() - (OUT / 'status.json').stat().st_mtime)))
+        time.sleep(max(0, 60 - (time.time() - (OUT / 'status.json').stat().st_mtime)))
     while True:
         generate()
         if not args.watch or all((ROOT / 'runs' / n / 'COMPLETE').exists() for n in RUNS):
             break
-        time.sleep(1200)
+        time.sleep(60)

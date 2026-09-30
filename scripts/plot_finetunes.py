@@ -81,4 +81,4 @@ if __name__=='__main__':
     while True:
         generate()
         if not args.watch or all((ROOT/'runs'/n/'COMPLETE').exists() for n in RUNS.values()):break
-        time.sleep(1200)
+        time.sleep(60)
