@@ -303,3 +303,13 @@ GPU7根盘约2.1GiB剩余；/home2约9.1TiB空闲但fbohan无可写目录且sudo
 固定val400随机seed20261001抽24张（237个GT），仅按图面积排序让最小图先做集成冒烟，不按GT选择目标裁剪。5组：RGB、25% IR透明叠加、独立RGB+IR、独立RGB+RGB控制、独立RGB+另一图IR控制。配对输入使用同一提示，所有框回到第一张RGB归一化坐标。仅类别名单和图像进入模型，不含验证GT/预测框；不使用phase2图像、API推理、训练或多模型结果融合。最大3072生成token，记录截断情况、原始响应、非法坐标、耗时和各卡峰值显存。解析器保留重复类别段，严格归一化xyxy，不猜坐标单位。
 
 输出缺乏已校准检测分数，记录生成token似然作为未校准排序代理，同时报告常数分数AP及阈值IoU50/75/90同类别一对一最大匹配F1。D-FINE独立验证冻结BN参考在同一完整配对子集比较，并报告两模型各自独有覆盖GT；不把GT选择诊断当成可部署融合。图每60秒更新，性能仅统计所有5组均完成的相同图；变化中的小子集不是完整val400或phase2成绩。脚本位于scripts/sensenova_probe.py、plot_sensenova_probe.py，结果experiments/sensenova_probe/summary.json和monitoring/sensenova_probe/overview.png。语法、重复类别/坐标/空预测评测路径已验证。
+
+### 2026-10-01：完整权重校验完成并启动实际推理
+
+ema.safetensors完整29214685368字节，与官方LFS SHA256 96f29abd98791288c5a24087322e964bb9bcabfc2f185ece71543f827bc2b11e一致；VAE亦通过官方校验。download.complete及model_identity.json是完整校验依据。实际推理改用GPU7物理卡0、1、2、3，活动权重BF16，保留每卡8.5GiB PyTorch硬上限；其他用户和独立CLIP进程未停止或修改。
+
+原备份通过SSHFS使用rsync -a，遇到GPU7/GPU6数值UID/GID不同造成chgrp拒绝，并且网络挂载逐次写入缓慢。保留已写部分，以直接SSH的rsync -rlt --partial --append-verify续传，不保留所有权；持久备份独立后台运行，完成后在GPU6核对整个权重SHA256。推理从已经完整校验的RAM文件直接启动，不再等待备份；备份未完成不得声称RAM权重已持久保存。备份和推理各有flock锁，重复备份子进程不覆盖实际备份PID。
+
+真实完整模型首次加载成功。未经标签包装的类别提示返回分割色标，不能算检测成功；按官方inference_demo.py的bbox任务模板为每个类别加入<p>标签后，RGB与25% IR叠加各已成功返回归一化检测框。首图两次推理分别约66.4/74.4秒、460/522生成token，每卡峰值reserved约5.170/3.990/3.990/4.158GiB；这证明可运行，不证明检测准确或存在收益。
+
+双图长前缀提示仍返回分割色标，导致旧试跑中断；其原始响应和结果整体移至archive/paired_preamble_*，未经标签包装试跑位于archive/untagged_prompt_*，均不混入新协议统计。当前双图提示以官方检测请求起始，仅在末尾说明第一图是参考、第二图为辅助。对不支持的响应保存原始文本及response_format_error，空预测参与同图评测并单独报告格式失败数，不把分割色标改造成框、不静默回退到RGB、不让一个无效双图响应阻断剩余RGB控制。当前固定24图、5组共120次请求已重新后台启动，尚无完整试验结果；统一配对指标必须连同格式失败和截断情况解读。

@@ -5,6 +5,7 @@ is an uncalibrated ranking proxy, so geometry/F1 and constant-score AP are also
 reported. The small seeded cohort does not estimate official phase2 performance.
 """
 import argparse
+import fcntl
 from collections import defaultdict
 import hashlib
 import io
@@ -148,6 +149,8 @@ def summarize(dataset, records):
                 'f1': 2*tp/max(num_pred+num_gt, 1), 'gt_covered_only_by_candidate': recovered,
                 'gt_covered_only_by_dfine': harmed}
         metrics['one_to_one_geometry'] = diagnostic
+        if variant != 'dfine_reference':
+            metrics['response_format_errors'] = sum(bool(by_variant[variant][i].get('response_format_error')) for i in common)
         result[variant] = metrics
     summary = {'paired_images': len(common), 'image_ids': common, 'results': result,
                'notes': ['Seeded small val400 pilot, not phase2 score or full validation mAP.',
@@ -175,15 +178,17 @@ def main():
     # Put the smallest sampled frame first for low-memory integration smoke;
     # selection remains the same fixed random cohort, independent of predictions.
     images.sort(key=lambda i: (i['width']*i['height'], i['id']))
-    category_text = ', '.join(c['name'] for c in dataset['categories'])
+    # Official category-task builder wraps each category in <p> tags. Plain
+    # category names can route this unified model into segmentation legends.
+    category_text = ', '.join(f"<p>{c['name']}</p>" for c in dataset['categories'])
     base_prompt = (f'Detect all instances of {category_text} in the image. Output the results '
                    'as a structured text list with each detection including category and '
                    'bounding box coordinates in <bbox> format.')
-    paired_prompt = ('The first image is the RGB reference. The second image is an auxiliary '
-                     'view of the same scene. Detect objects in the FIRST image only; use the '
-                     'second image only as supporting evidence and tolerate local misalignment '
-                     'or black borders. All bounding boxes must use normalized coordinates '
-                     'of the FIRST image. ' + base_prompt)
+    # Keep the official detection request first. A long auxiliary-view preamble
+    # caused the unified model to return segmentation palettes instead of boxes.
+    paired_prompt = (base_prompt + ' The first image is the detection reference; '
+                     'the second image is auxiliary. Return bounding boxes only '
+                     'for the first image, in normalized xyxy coordinates.')
     identity = {'model_revision': REVISION, 'source_commit': SOURCE_SHA, 'seed': SEED,
                 'annotation_sha256': hashlib.sha256(dataset_path.read_bytes()).hexdigest(),
                 'image_ids': [i['id'] for i in images], 'variants': VARIANTS,
@@ -201,6 +206,8 @@ def main():
         print(json.dumps(summarize(dataset, records), ensure_ascii=False)); return
     if args.plan_only:
         print(json.dumps(identity, ensure_ascii=False)); return
+    worker_lock = (OUT / 'worker.lock').open('a')
+    fcntl.flock(worker_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     actual_sha = subprocess.check_output(['git', '-C', args.source, 'rev-parse', 'HEAD'], text=True).strip()
     assert actual_sha == SOURCE_SHA
     assert json.loads((OUT / 'model_identity.json').read_text())['revision'] == REVISION
@@ -278,18 +285,27 @@ def main():
                     text = model.generate(contents=contents, mode='dense_detection',
                                           noise_seed=SEED+image_info['id'], max_think_token_n=args.max_tokens)
                 assert isinstance(text, str)
+                format_error = None
+                if '<color>' in text and '<bbox>' not in text:
+                    format_error = 'segmentation_palette_instead_of_detection'
+                elif '<bbox>' not in text and '<p>' in text:
+                    format_error = 'category_output_without_boxes'
+                # Unsupported auxiliary inputs must not abort the RGB control.
+                # Keep raw responses and explicitly count format failures; never
+                # reinterpret masks as boxes or silently fall back to RGB.
                 # generate_text omits the last predicted token (normally EOS).
                 prediction, invalid = parse_boxes(text, model.tokenizer, trace[:-1], dataset['categories'], *rgb.size)
                 record = {'image_id': image_info['id'], 'filename': image_info['file_name'],
                           'variant': variant, 'prompt': prompt, 'text': text, 'prediction': prediction,
-                          'invalid_detections': invalid, 'seconds': time.monotonic()-start,
+                          'invalid_detections': invalid, 'response_format_error': format_error,
+                          'seconds': time.monotonic()-start,
                           'generated_tokens': len(trace), 'truncated': len(trace) >= args.max_tokens,
                           'peak_reserved_gib': [torch.cuda.max_memory_reserved(i)/1024**3 for i in range(4)],
                           'peak_allocated_gib': [torch.cuda.max_memory_allocated(i)/1024**3 for i in range(4)]}
                 stream.write(json.dumps(record, ensure_ascii=False)+'\n'); stream.flush(); os.fsync(stream.fileno())
                 records.append(record); completed.add((image_info['id'], variant))
                 print(json.dumps({k: record[k] for k in ['image_id', 'variant', 'seconds', 'generated_tokens',
-                                                       'peak_reserved_gib']}, ensure_ascii=False), flush=True)
+                                                       'peak_reserved_gib', 'response_format_error']}, ensure_ascii=False), flush=True)
                 if index < 2:
                     drawing = rgb.copy(); draw = ImageDraw.Draw(drawing)
                     for box, category in zip(prediction['boxes'], prediction['labels']):

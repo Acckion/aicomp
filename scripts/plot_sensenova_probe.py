@@ -38,12 +38,16 @@ def generate():
              f"Requests: {worker.get('completed_requests', 0)} / {worker.get('total_requests', 120)}",
              f"Image / variant: {worker.get('image_id', '-')} / {worker.get('variant', '-')}",
              f"Fully paired images: {summary.get('paired_images', 0)} / 24",
-             'GPU7 physical cards: 3, 0, 1, 2; 8.5 GiB PyTorch cap each',
+             f"GPU7 physical cards: {controller.get('gpus', [0, 1, 2, 3])}; 8.5 GiB PyTorch cap each",
              'Persistent storage: GPU6 /home2/fbohan/AIC_storage',
              'No phase2 inference or fitting; zero-shot validation pilot']
     error = worker.get('error') or controller.get('error')
     if error:
         lines += ['ERROR: '+error[:170]]
+    if summary.get('results'):
+        failures = {name: data.get('response_format_errors', 0)
+                    for name, data in summary['results'].items() if name != 'dfine_reference'}
+        lines += ['Format failures: '+str(failures)]
     ax.text(0, 1, '\n\n'.join(lines), va='top', fontsize=9)
     labels = list(summary.get('results', {}))
     for ax, key, title in [(axes[1, 0], 'map50_95', 'mAP@50-95: uncalibrated token likelihood vs native D-FINE scores'),
