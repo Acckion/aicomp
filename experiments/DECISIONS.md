@@ -354,3 +354,23 @@ validate_vl_distillation.py检查24张真实增强样本的目标ID/特征/标�
 run_vl_distillation.py分别在GPU7物理卡4（对照）与7（蒸馏）后台启动，继续PyTorch8.5GiB硬限额、9900MiB启动余量及自身/GPU锁。两组完整val400初始mAP均54.1748550271，AP75均55.1179582720，已各完成至少3次正式优化器更新，loss有限；没有新增epoch AP或phase2收益。初始验证的.009分级别差异与旧统一裁剪复测协议不混为训练增益。monitoring/vl_distillation/overview.png及status.json每60秒更新mAP50–95/AP75/AP90/小目标AP/蒸馏损失及进度，未完成epoch只展示初始点。
 
 根分区余量有限，新增runs/vl_control800和runs/vl_distill800为指向已授权GPU6 SSHFS存储/vl_distillation/runs的独立符号链接；完整best/last保存模型、EMA、新投影、优化器、scaler、调度器和RNG，可使用--resume。每轮weights_epoch_XXX.pth只保留原D-FINE模型键、移除训练期投影，用普通800 D-FINE配置推理，不需CLIP或文字输入。训练教师缓存已复制到GPU6持久存储，targets.npz远端SHA256=f2b090bcb864352b4717ce8527eb7f0aa5e0c479cecf7906ae5263d143ebee6b与本地一致，教师权重本地SHA256=8218499466176a22693ab5540e702103596c444099725a9898bf688a68eabb96。缓存、图像、日志、模型及训练输出不进Git；只发布代码、配置和决策记录。
+
+## 2026-10-01：停止微小提升路线，启动IR检测监督与互补诊断
+
+用户报告2000张冻结BN第2轮、800整图原生Top100包phase2为49.498，低于此前翻转TTA/强Gaussian Soft-NMS49.986和960整图49.813。选轮依据train1600/val400统一推理54.3380645对父模型54.1654769的小幅收益，不能代表全量模型的独立验证或保证phase2迁移。本次重新生成包SHA256=58b503a9f2d311c0889cf748c042924627bb1b8c51bbe6e72d6dfda146e446d2，对应恢复后权重abf7f0b8dd6e81cdcb24ccf8c5533082a7fb3528ba1b5b79a4316c35f6162fb4；1000TXT原生框/分数/坐标与实际尺寸校验通过。成绩已写入独立包manifest和decision，不再将其推荐为新提交。
+
+视觉语言蒸馏两组8轮完成：对照54.3150885、蒸馏54.2709178，整体差−.04417，没有测到整体收益，单seed不等于证明蒸馏方向无效。CLIP仅对通过GT一致性/尺寸筛选的匹配查询施加语义监督，未直接监督定位、背景或困难未匹配查询。成熟RGB模型的一对一IoU50/score.05诊断漏检174个中定位/部分重叠123、类混淆17；它不是全部AP错误的分解，也不能推断phase2分布。
+
+本聊天曾在独立experiments/tonight_20261001/clip_top100启动冻结BN原生Top100的弱CLIP惩罚beta1，无框/类别改变，主要候选不使用Soft-NMS。val400实际相对原生输出mAP+.03635、小目标AP+.37509、密集子集+.09710，未通过事先登记的整体至少+.1门槛。用户明确要求停止微小提升后，核对UID/命令/PGID，仅停止尚在运行的自身GPU5控制器及part2进程组；GPU2/6任务已经自然退出，保留结果。独立协作者CLIP源码、缓存及进程未更改/停止/纳入本次Git提交。不再继续该提交队列。
+
+此前官方数据128图抽样：小目标330个，具有真实毫米深度编码者中约75.15%深度有效覆盖不足10%；RGB同类最佳IoU75不足组深度有效比例中位.1149，IR目标/环带灰度差中位5。这些是覆盖/对比度代理，不证明IR语义价值，也不证明毫米Depth能够补救小目标。训练149张/phase2 117张JPEG深度为8位RGB编码，与uint16毫米PNG不能混用；图像尺寸相同不建立几何配准。
+
+新实验ir_detector800使用官方train1600 IR图与原检测GT适配D-FINE-X。zip_ir_dataset.py按进程懒读取ZIP中的同名IR文件，不解压大数据；验证400与训练ID不相交，不使用phase2图像/标签。12张真实增强样本形状、标签、框对齐检查通过。从train1600 RGB ft_aug800 epoch20 EMA初始化全部原学习参数，父SHA758113d753e348f5cf1153c86ad5fa8f7d5dd0973649fcc3113393e5482215f0。HGNet FrozenBN改为可适应IR域的BN，仅增加130个置零num_batches_tracked计数；其余初始张量逐一形状匹配并严格加载。干净初始化保存在GPU6已授权multimodal_probe存储。没有添加伪标签、外部图像或语言生成框。
+
+24轮、800多尺度峰值992，两张GPU7物理卡5/6 DDP+SyncBN，每卡batch2、累计3步，有效batch12；每卡PyTorch8.5GiB硬限制、启动9900MiB空闲门槛、warmup1/cosine至.1、EMA.999，头LR1e-4、骨干LR1e-5。IR适配不冻结BN统计并允许骨干stem训练，区别于之前成熟RGB继续小LR优化。这个实验的目的为测量新模态检测监督是否产生互补，不把IR自身AP低于RGB作为唯一否决条件，也不承诺57。
+
+首轮DDP检查暴露旧单卡train_mechanisms工作锁冲突，新独立train_ir_detector.py仅rank0持有工作锁；随后发现骨干norm分组与旧正则有重叠，修正IR配置的负向正则为(?!.*(?:norm|bn))，CPU optimizer参数分组检查通过。失败日志保留startup_attempt_1/2，没有修改旧训练器或上游源码。正式两卡6批峰值992、包含单rank空GT的训练/反传/验证通过SMOKE TEST PASSED；正式训练已有3次优化更新，loss有限，rank0峰值5521.81MiB。初始化直接用RGB权重看IR的完整val400 mAP11.31845，只是epoch0域迁移起点，没有已完成训练epoch效果。
+
+run_ir_detector.py后台控制24轮训练；全量best/last包含优化器/RNG供恢复，每3轮紧凑权重，runs/ir_detector800指向GPU6 SSHFS/multimodal_probe/runs/ir_detector800，不写满GPU7根盘。after_ir_detector.py自动在epoch3/6/12/24使用GPU7物理卡3进行独立验证：IR原生Top100、固定RGB父模型原生Top100，各自同类/score≥.05/IoU50/75/90最大基数一对一匹配，报告IR独有GT、小目标独有GT和分类别覆盖。GT覆盖集合的并集仅离线互补诊断，不是可实现mAP、不导出合并检测/提交、不使用检测器投票/平均。最大基数匹配的重复框、错类与空预测边界检查通过。
+
+plot_ir_detector.py每60秒更新monitoring/ir_detector/overview.png，包括mAP50–95/AP50/AP75/小目标AP及已完成独立诊断的IR独有GT。真正验证后再决定是否投入零初始化残差、局部对齐、质量门控的单模型融合，或检测任务教师监督；该融合尚未实现/启动。机制参考CVPRW2023 Enhanced Thermal-RGB Fusion for Robust Object Detection（https://openaccess.thecvf.com/content/CVPR2023W/PBVS/html/Ahmar_Enhanced_Thermal-RGB_Fusion_for_Robust_Object_Detection_CVPRW_2023_paper.html），其配准/门控设计是研究依据，其他数据集收益不能当作本赛提升。
