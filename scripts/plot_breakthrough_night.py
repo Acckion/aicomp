@@ -41,7 +41,11 @@ def points(run,metric):
     initial=read(ROOT/'runs'/run/'initial_metrics.json')
     candidates=([(0,initial)]if initial else [])+[(r.get('epoch',0),r.get('validation',{}))for r in rows(run)]
     for epoch,v in candidates:
-        value=v.get('ap_by_iou',{}).get('0.90') if metric=='ap90' else (v.get('coco_eval_bbox',[])[metric]if len(v.get('coco_eval_bbox',[]))>metric else None)
+        if metric=='ap90':
+            value=v.get('ap_by_iou',{}).get('0.90')
+            # Co-DINO records AP90 in points; D-FINE records a fraction.
+            if value is None and v.get('ap90') is not None:value=v['ap90']/100
+        else:value=v.get('coco_eval_bbox',[])[metric]if len(v.get('coco_eval_bbox',[]))>metric else None
         if value is not None:result.append((epoch,value*100))
     return result
 
