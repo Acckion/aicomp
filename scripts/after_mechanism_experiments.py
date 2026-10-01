@@ -53,7 +53,15 @@ def summarize(name):
         c: statistics.median(r['validation']['per_class_ap'][c] * 100 for r in rows[-5:])
         for c in rows[0]['validation']['per_class_ap']
     }
-    result['best_recorded_training_map_epoch'] = max(rows, key=lambda r: r['validation']['coco_eval_bbox'][0])['epoch']
+    best_row = max(rows, key=lambda r: r['validation']['coco_eval_bbox'][0])
+    result['best_recorded_training_map_epoch'] = best_row['epoch']
+    result['best_recorded_training_map'] = best_row['validation']['coco_eval_bbox'][0] * 100
+    # The trainer includes epoch 0 in best.pth selection; a degraded run can
+    # therefore retain its untouched starting weights rather than a trained epoch.
+    initial_ap = result['initial_validation']['coco_eval_bbox'][0] * 100
+    result['saved_best_epoch'] = (best_row['epoch']
+                                  if result['best_recorded_training_map'] > initial_ap else 0)
+    result['saved_best_is_starting_weight'] = result['saved_best_epoch'] == 0
     return result
 
 
