@@ -109,6 +109,8 @@ def main():
     best_ap, best_epoch = -1., None
     if args.resume:
         checkpoint = torch.load(args.resume, map_location='cpu', weights_only=False)
+        if checkpoint.get('checkpoint_format') == 'ema_inference':
+            raise ValueError('EMA inference checkpoint cannot resume optimizer/RNG state; use --init-checkpoint')
         solver.load_state_dict(checkpoint)
         if args.rebatch_resume:
             old_schedule = checkpoint['lr_warmup_scheduler']

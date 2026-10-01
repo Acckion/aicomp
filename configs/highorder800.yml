@@ -1,0 +1,8 @@
+__include__: ['./next_mechanism_base800.yml']
+mechanism_imports: [extra_iou_metrics, rank_matching]
+output_dir: /home/fbohan/AIC/runs/highorder800
+DFINECriterion:
+  matcher:
+    type: HighOrderMatcher
+    weight_dict: {cost_class: 2, cost_bbox: 5, cost_giou: 2}
+    iou_power: 4.0

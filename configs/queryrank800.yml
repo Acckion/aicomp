@@ -1,0 +1,15 @@
+__include__: ['./next_mechanism_base800.yml']
+mechanism_imports: [extra_iou_metrics, rank_matching]
+output_dir: /home/fbohan/AIC/runs/queryrank800
+criterion: QueryRankCriterion
+QueryRankCriterion:
+  weight_dict: {loss_vfl: 1, loss_bbox: 5, loss_giou: 2, loss_fgl: 0.15, loss_ddf: 1.5}
+  losses: [vfl, boxes, local]
+  alpha: 0.75
+  gamma: 2.0
+  reg_max: 32
+  rank_weight: 0.1
+  matcher:
+    type: HighOrderMatcher
+    weight_dict: {cost_class: 2, cost_bbox: 5, cost_giou: 2}
+    iou_power: 4.0

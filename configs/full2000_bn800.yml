@@ -1,0 +1,6 @@
+__include__: ['./next_mechanism_base800.yml']
+validate: false
+output_dir: /home/fbohan/AIC/runs/full2000_bn800
+train_dataloader:
+  dataset:
+    ann_file: /home/fbohan/AIC/data/annotations/train2000.json

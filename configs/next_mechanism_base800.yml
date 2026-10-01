@@ -1,0 +1,5 @@
+__include__: ['./mechanism_base800.yml']
+# Disk-constrained screening: reusable EMA weights, no optimizer/RNG resume.
+checkpoint_format: ema_inference
+inference_checkpoint_epochs: [2, 3]
+smoke_empty_rank: 0

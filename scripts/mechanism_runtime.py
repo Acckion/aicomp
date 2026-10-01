@@ -16,6 +16,8 @@ def install_checkpoint_controls(baseline, config):
     original_save = baseline.atomic_save
     interval = int(config.get('inference_checkpoint_interval', 1))
     retain_epoch_states = config.get('save_epoch_training_states', True)
+    inference_only = config.get('checkpoint_format') == 'ema_inference'
+    selected_epochs = config.get('inference_checkpoint_epochs')
     lock_path = Path(baseline.ROOT) / 'experiments/mechanism_training/checkpoint_write.lock'
     lock_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -33,8 +35,18 @@ def install_checkpoint_controls(baseline, config):
         if re.fullmatch(r'epoch_\d+\.pth', path.name) and not retain_epoch_states:
             return
         compact = re.fullmatch(r'weights_epoch_(\d+)\.pth', path.name)
-        if compact and int(compact.group(1)) % interval and int(compact.group(1)) != config['epochs']:
+        if compact and selected_epochs is not None and int(compact.group(1)) not in selected_epochs:
             return
+        if compact and int(compact.group(1)) % interval and int(compact.group(1)) != config['epochs']:
+            if selected_epochs is None:
+                return
+        if inference_only and path.name in ('best.pth', 'last.pth'):
+            weights = state['ema']['module'] if 'ema' in state else state['model']
+            state = {'model': weights, 'last_epoch': state.get('last_epoch', -1),
+                     'best_ap': state.get('best_ap'), 'best_epoch': state.get('best_epoch'),
+                     'num_classes': config['num_classes'], 'source': 'EMA',
+                     'checkpoint_format': 'ema_inference',
+                     'note': 'Inference/init only; optimizer/RNG state is not retained.'}
         with lock_path.open('a') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
             required = tensor_bytes(state) + 16 * 1024**2 + 512 * 1024**2
@@ -45,8 +57,9 @@ def install_checkpoint_controls(baseline, config):
             original_save(state, path)
 
     baseline.atomic_save = save
-    print(f'CHECKPOINT_POLICY full best/last retained, full epoch states={retain_epoch_states}, '
-          f'compact interval={interval}, serialized writes with >512 MiB reserve', flush=True)
+    print(f'CHECKPOINT_POLICY best/last retained, full epoch states={retain_epoch_states}, '
+          f'compact interval={interval}, inference-only best/last={inference_only}, '
+          f'explicit snapshot epochs={selected_epochs}, serialized writes with >512 MiB reserve', flush=True)
 
 
 def _train_with_frozen_statistics(self, mode=True):
@@ -101,6 +114,7 @@ def install_training_controls(baseline):
                 state = {'epoch': epoch + 1, 'next_batch': next_batch,
                          'epoch_optimizer_updates': updates[0], 'time': time.time(),
                          'loss': loss,
+                         'rank_pairs': getattr(criterion, 'last_rank_pairs', None),
                          'lr': [g['lr'] for g in optimizer.param_groups],
                          'cuda_peak_allocated_mib': torch.cuda.max_memory_allocated() / 1024**2}
                 tmp = path.with_suffix('.tmp')

@@ -244,3 +244,24 @@ BN更新组的best.pth元数据best_epoch=0/last_epoch=-1，代表未训练父�
 困难子集显示MAL早期最佳相对冻结对照密集AP+.1492，但短边困难-.0230；密集拼图相对冻结对照小目标多子集-.4635、短边困难-.1855，不能由“增加目标密度”推断已解决困难目标。23/40图子集与稀有类别不稳定，排除近邻也不是场景隔离验证。最高复测仅比原父权重+.2594，没有获得从phase2约50到57的证据。
 
 后续机制验证优先固定BN并保留共同父权重作为匹配起点：①高IoU候选匹配及query间排序/唯一归属；②训练期一对多encoder辅助监督，区别于本次增加图中目标数量；③仅教师明确更准时才进行局部到整图蒸馏。本次完成后不自动启动新长训练或推广全量；保存所有候选供复核。
+
+## 2026-10-01：用户授权全量迁移和下一轮机制实验
+
+用户明确要求将保留方法应用到2000模型并开始下一轮。启动四个独立单卡任务，全部12轮，800多尺度峰值992、每卡batch3/累积3有效batch9、头LR1e-5/骨干1e-7、warmup1/cosine至.1、EMA.999/warmups1000、冻结全部BN运行统计且affine仍可训练。仅训练比赛训练集RGB，未使用phase2标签。
+
+| 任务 | GPU | 起点 | 训练数据/验证 | 变更 |
+| --- | ---: | --- | --- | --- |
+| full2000_bn800 | 0 | ft2000_aug800 epoch20 EMA | train2000，无独立验证 | 冻结BN整图续训对照 |
+| full2000_dense800 | 3 | 同上 | 同上 | 冻结BN＋p.25保持像素尺寸的四图局部密集增强 |
+| highorder800 | 5 | ft_aug800 epoch20 EMA | train1600/val400 | 所有常规匹配分支使用-p(class)*IoU^4高阶匹配 |
+| queryrank800 | 6 | 同上 | 同上 | 相同高阶匹配＋最终查询相对排序辅助损失 |
+
+高阶匹配参考Rank-DETR Eq.8，纯负乘积作为Hungarian成本，不混加原L1/GIoU匹配成本；保留原VFL/L1/GIoU/FGL/GO-LSD等训练损失和去噪分支。父模型已成熟，因此从本次续训开始启用，与论文从中期启用的意图一致；未复现其rank-adaptive head/query ranking layer/GIoU-aware focal，是单组件迁移实验。参考 https://arxiv.org/html/2310.08854v2 。只改变匹配，并未增加查询数量或改变编码器top300选择/最终top100推理规则。
+
+排序项是本地机制假设，不宣称论文配方：同GT中已匹配query的IoU至少.5、比未匹配竞争者至少高.05，竞争者IoU至少.3且最近GT为该GT；最多5个置信度最高竞争者。额外损失为.1*mean_group mean_pair softplus(logit_comp-logit_winner+.2)，几何筛选无梯度，两个logit都有梯度；其他任意GT的匹配query全部排除，避免误压真实重叠目标。仅最终分支新增该项，原辅助/encoder/DN损失保持。数值检查覆盖高质量选择、topk query唯一、正确梯度方向、保护重叠GT、劣质winner不提升及空GT；真实峰值992的6batch（含空GT）训练检查四组均通过，CUDA峰值allocated约7740–7746MiB。正式训练四组均已完成3次优化器更新、loss有限；排序组第3次更新有35个有效pair。当前不是模型收益结果。
+
+根分区约4.4GiB可用，/home2无用户写权限。为不删除任何旧模型，本轮best/last仅保存EMA模型和轮次/最佳AP元数据，另保留epoch2/3推理快照，跳过全部full epoch和其他快照，预计新增权重约3.2GiB。EMA初始化/推理仍精确可用；不含optimizer/scaler/RNG，不能精确断点恢复，train_baseline对这类文件的--resume明确拒绝，可显式--init-checkpoint重新续训。原任务默认仍保存完整状态，未改已有checkpoint。模型写盘继续flock串行、写前保留512MiB余量。数值检查确认EMA选择正确、epoch过滤和无重复full epoch保存。
+
+run_next_mechanisms.py后台控制器有任务锁/GPU锁、worker重复保护、显存门槛9900MiB、PyTorch8.5GiB限额、真实smoke前置、退出时仅处理自己的child进程组。plot_next_mechanisms.py每60秒更新monitoring/next_mechanisms/overview.png，2000任务只画loss/LR/进度；1600两组和已有冻结BN同预算对照画完整epoch mAP/AP75/AP90/小目标。排序与高阶匹配配对比较能区分两项收益；已有冻结BN运行来自同配方同父模型同seed，是历史同条件对照，非新并行重复实验。
+
+after_next_mechanisms.py已后台等待完成。按此前独立实验的选轮固定生成full2000_dense800 epoch3和full2000_bn800 epoch2的phase2包，使用800整图/native top100，不加此前正式成绩下降的翻转TTA/Soft-NMS；全量模型不使用包含训练图的val400来选轮。随后对新机制保存best做800统一复测和密集、小目标、输入短边困难及排除近邻子集分析，比较最后5轮及类别变化。只准备包，不自动提交，不自动推广新匹配/排序到全量；不会声称预测包已提升正式成绩。失败任务记录错误并继续其他候选。

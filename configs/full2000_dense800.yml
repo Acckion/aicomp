@@ -1,0 +1,9 @@
+__include__: ['./dense_o2o800.yml']
+validate: false
+checkpoint_format: ema_inference
+inference_checkpoint_epochs: [2, 3]
+smoke_empty_rank: 0
+output_dir: /home/fbohan/AIC/runs/full2000_dense800
+train_dataloader:
+  dataset:
+    ann_file: /home/fbohan/AIC/data/annotations/train2000.json
