@@ -289,3 +289,17 @@ IR框内/环形背景的灰度中位差是信号代理，不是可获得的检�
 full2000_bn epoch2和dense epoch3均早于失败且已完整落盘，原固定选轮仍可用于phase2预测。after_next_mechanisms.py新增显式--package-saved-candidates，仅在所选epoch完整metrics存在且快照存在时允许从失败任务恢复候选生成；manifest报告完整训练与已完成轮次分开，保留原失败记录。已后台启动该恢复队列，不将生成候选包等同于继续训练或正式成绩提升。后续主线优先多模态/语义辅助的可验证信息增益，而非重开同样RGB扫参。
 
 用户进一步确认此前最高约60分属于phase1；phase1和当前phase2不可直接比较，不将其解释为重建损失约10分或预期可恢复量。恢复预测时GPU3当前不足9900MiB空闲，新增--gpu并将自身恢复队列改到GPU0（空闲约11042MiB），未干预其他任务。
+
+### 2026-10-01 SenseNova-Vision验证试验与持久存储
+
+用户授权试验商汤检测专训VLM，随后要求寻找可用空间。核实目标为SenseNova-Vision-7B-MoT，而非U1/SI；官方源码固定4366e0e1f4d22d2207ecc8e339f886b765ba876e，权重固定HF revision 79548fcc5b954598799b9317f8d3ec5e347d5c0e。论文主检测表56.6采用F1@mIoU，另表COCO mAP53.7；二者都不等同AICOMP phase2成绩。未找到RGB/IR融合训练依据，仅以零样本辅助图像输入探索。
+
+GPU7根盘约2.1GiB剩余；/home2约9.1TiB空闲但fbohan无可写目录且sudo需要密码。GPU6已授权SSH正常，/home2/fbohan可写，所在根盘约4.11TiB空闲（其/home挂载盘只剩约4GiB，不使用）。已创建GPU6 /home2/fbohan/AIC_storage，并以用户态SSHFS挂载到GPU7 /home/fbohan/AIC/checkpoints/gpu6_storage；双向读写检查通过。scripts/mount_gpu6_storage.sh可重新挂载；私钥内容不进Git，挂载目录已被checkpoints忽略规则覆盖。挂载是网络文件系统，GPU6或SSH连接中断会影响访问；没有清理其他用户文件或更改目录权限。
+
+先将约29.2GB ema.safetensors下载到/dev/shm/aicomp_sensenova，避免写满根盘。scripts/sensenova_download.py固定官方revision，HTTP Range逐块检查偏移与大小、保存可恢复进度，完整文件必须通过官方LFS SHA256才产生download.complete。scripts/run_sensenova_probe.py后台等待完整校验，随后复制模型、源码和隔离依赖到GPU6持久目录并在GPU6核对SHA256，再进入GPU7本地推理；源RAM文件不会被当成持久备份。启动时记录尚处于下载阶段，不能声称完整模型推理已通过或已有效果提升。
+
+保留AICOMP现有torch2.5.1环境；transformers4.49/tokenizers.21、einops、sentencepiece和匹配torch2.5/cu12/cp311/ABI的flash-attn2.7.4.post1安装到隔离临时target，随后复制持久存储。不修改另一个既有CLIP实验的包或进程。完整官方架构meta构建成功；BF16检测活动参数按GPU7物理卡3,0,1,2分布，约4.635/3.473/3.473/3.473GiB，未执行的生成专家约12.155GiB放CPU，活动参数不量化/不修改。每卡PyTorch硬上限8.5GiB，四卡均至少9900MiB空闲才启动。相同官方Qwen2MoT代码的小模型跨卡/CPU生成分支卸载预检：首次上下文与第二次KV更新结果均与单卡逐位一致；这不是完整权重推理测试。
+
+固定val400随机seed20261001抽24张（237个GT），仅按图面积排序让最小图先做集成冒烟，不按GT选择目标裁剪。5组：RGB、25% IR透明叠加、独立RGB+IR、独立RGB+RGB控制、独立RGB+另一图IR控制。配对输入使用同一提示，所有框回到第一张RGB归一化坐标。仅类别名单和图像进入模型，不含验证GT/预测框；不使用phase2图像、API推理、训练或多模型结果融合。最大3072生成token，记录截断情况、原始响应、非法坐标、耗时和各卡峰值显存。解析器保留重复类别段，严格归一化xyxy，不猜坐标单位。
+
+输出缺乏已校准检测分数，记录生成token似然作为未校准排序代理，同时报告常数分数AP及阈值IoU50/75/90同类别一对一最大匹配F1。D-FINE独立验证冻结BN参考在同一完整配对子集比较，并报告两模型各自独有覆盖GT；不把GT选择诊断当成可部署融合。图每60秒更新，性能仅统计所有5组均完成的相同图；变化中的小子集不是完整val400或phase2成绩。脚本位于scripts/sensenova_probe.py、plot_sensenova_probe.py，结果experiments/sensenova_probe/summary.json和monitoring/sensenova_probe/overview.png。语法、重复类别/坐标/空预测评测路径已验证。
