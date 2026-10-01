@@ -157,3 +157,22 @@ run_night_experiments.py分别管理三条队列和失败状态，已有部分�
 匹配机制实测补充：scripts/audit_matching.py在32张带原有增强的train1600视图上运行训练模式decoder，冻结BN且不更新梯度/权重。最终层182个正查询、跨层GO联合206个查询；最终层正查询与GO联合指向不同GT或类别的数量均为0。最终层匹配平均IoU .81565，其中短边<16像素的54个匹配平均IoU .68829；12个匹配IoU<.5、43个<.75。样本量有限，不能证明全训练无跨层冲突，但不支持把匹配冲突当作当前首要问题。因此上述2x2匹配网格暂缓，优先冻结BN的配对控制与尺度归一化定位辅助损失；NWD只有在扩大诊断后发现匹配不稳时再纳入。诊断保持原匹配器与损失，不作验证/测试标签训练。
 
 复现入口：AICOMP环境运行scripts/audit_training_mechanisms.py生成BN候选/训练验证相似性报告，scripts/tide_diagnostics.py生成逐IoU错误分解，scripts/audit_matching.py --batches 16复现本次匹配抽查。TIDE依赖在requirements_diagnostics.txt中单独固定，不升级现有训练的NumPy/OpenCV。诊断输出、权重、数据和近邻图继续Git忽略；所有数值为本地诊断，phase2已知正式结果仍为49.986/49.813。
+
+## 2026-10-01：用户授权子代理并行启动机制实验
+
+用户明确要求派发subagent并行开始上述方向，成功启动后代理可结束。三个子代理负责BN配对控制、定位辅助损失、MAL/密集增强；root统一接入逐IoU指标、绘图、完成后比较及Git管理。五项均从ft_aug800 epoch20的成熟EMA权重开始，official train1600训练/val400验证，不使用test训练，不直接启动全量推广。
+
+统一配置：contextfull800整图光度增强/翻转、800多尺度峰值992、12轮、head LR1e-5/backbone1e-7、warmup1/cosine至.1、EMA.999/warmups1000、单卡每批3张×累积3有效batch9、val batch2、seed20260929、workers2、sync_bn=false、PyTorch 8.5GiB显存上限。GPU0 bn_adapt800、GPU1 bn_frozen800、GPU5 relative_box800、GPU6 mal800、GPU4 dense_o2o800。启动前按可用显存门槛等待，不终止其他用户任务；驱动统计的本任务显存约9GiB（含框架外CUDA开销）。实际共享计算资源可能降低速度，不承诺不影响其他任务的吞吐。
+
+- BN配对仅输出目录与freeze_bn_statistics不同；冻结BN运行统计、affine仍可训练，model.train反复调用及EMA均兼容。数值检查通过。实际两组峰值992 smoke通过，单任务峰约7746MiB。首轮实际权重检查：冻结对照及定位实验的276个非骨干BN buffer与起点逐项完全一致，last包含优化器/scaler/EMA/调度状态。
+- relative_box800只增加尺度归一化辅助定位项，原matcher、L1/GIoU/VFL/FGL/GO-LSD/LQE保留。公式 .25/N_GO × sum mean4 SmoothL1((pred−GT)/[max(w,.02),max(h,.02),max(w,.02),max(h,.02)], beta=.1；归一化cxcywh，分母下限防微小框梯度失控，SmoothL1尾部线性，误差本身没有截断。每个原回归分支应用自己的.25权重，不重复乘bbox×5；final/aux/pre/encoder/DN、空GT、零误差、同位移小框惩罚更大、有限梯度检查通过。
+- mal800只将VFL分类公式替换为官方MAL，保留原分类分支调度/权重与全部定位损失。正类soft target=IoU^gamma、正项权重1，负类target0、权重sigmoid(logit)^gamma；采用官方base/deim.yml gamma1.5、mal_alpha=null，matcher gamma仍2。正常/空GT/values分支与本地官方函数逐值完全一致，梯度有限。来源DEIMv2官方revision 1d2ca42171570c713e78fc6a766ec5104b7f4724的engine/deim/deim_criterion.py；不是完整DEIM复现。
+- dense_o2o800是像素保留局部四图密集增强的单因素变体：概率.25全程不变，四个训练源各映射800后取目标中心400块拼成800，75%整图；相对baseline800保留未截断目标像素尺寸，裁剪至少保留原框面积.3。其他源仅来自同一train1600的raw load_item，绝不读取val/test。64图抽样原均4.17框、拼图均16.36框；合成20px框尺寸、边界/labels/area/iscrowd/空GT检查通过。不是四整图压缩Mosaic，也不是完整Dense O2O/Mixup/CopyBlend配方。
+
+五项真实峰值6batch训练+验证检查均通过，全部已完成开训前400图评测及至少3次正式优化器更新，loss有限。不同GPU/TF32计算起点AP约54.16–54.20，不能把微小起点差异当机制收益。首轮冻结对照AP54.2819/AP90 21.6114、定位AP54.1379/AP90 21.7664；仅一轮结果不作收益结论，继续12轮。所有子代理在启动检查后结束，后台控制器/训练进程独立持久运行。
+
+存储保护：根分区初始仅约19GiB可用，统一保留逐轮完整metrics、best/last完整训练状态，compact推理权重仅第3/6/9/12轮；不重复写full epoch状态。跨任务flock串行checkpoint落盘，写前要求足够本次tensor字节+512MiB余量，防多任务临时文件同时挤满磁盘；既有数据/权重未删除。
+
+启动事件纠正：MAL第一次配方重启时只停止控制器，残留独立训练进程，导致两个同run worker短暂并存。root发现后仅停止自身MAL控制器和两个训练进程组，整个污染run/log/status归档experiments/mechanisms/archive/mal_duplicate_20261001_115717，不进入比较；其他四项未中断。干净MAL从原父权重gamma1.5重启，确认GPU6唯一CUDA训练PID及3次更新。共同训练入口新增worker自身flock；Dense/MAL启动器新增同配置活跃进程拒绝、TERM/INT时只清理自身child组、延迟signal handler避免spawn竞态和子进程继承屏蔽信号。隔离的真实父子进程退出回归检查通过；公共worker duplicate拒绝也在CUDA初始化前检查通过。
+
+scripts/extra_iou_metrics.py利用同一COCO evaluator的precision追加IoU.50–.95逐阈值AP、逐类AP90，不增加推理。scripts/plot_mechanism_experiments.py每60秒刷新monitoring/mechanism_trials中的总体/类别/损失/高IoU曲线及轮内进展，只完整epoch产生验证曲线。scripts/after_mechanism_experiments.py等待完成/明确失败后比较最后5轮总体、小目标、AP75/AP90、类别变化；GPU7按显存门槛依次复测保存best的800原图、密集/小目标子集，增加800下短边<16占比≥.5且至少3目标的40图/606框子集，以及排除近邻候选后的362图验证。辅助子集复现检查：共同父权重AP40.9004/54.3804，与既有相似性报告一致；子集重叠、类别不同，不推算phase2表现、不自动推广全量。

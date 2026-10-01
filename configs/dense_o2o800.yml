@@ -1,0 +1,17 @@
+__include__: ['./mechanism_base800.yml']
+mechanism_imports: [dense_o2o_views, extra_iou_metrics]
+output_dir: /home/fbohan/AIC/runs/dense_o2o800
+train_dataloader:
+  dataset:
+    transforms:
+      ops:
+      - {type: RandomPhotometricDistort, p: 0.5}
+      - {type: DenseO2OViews, p: 0.25, output_size: 800}
+      - {type: SanitizeBoundingBoxes, min_size: 1}
+      - {type: RandomHorizontalFlip}
+      - {type: Resize, size: [800, 800]}
+      - {type: SanitizeBoundingBoxes, min_size: 1}
+      - {type: ConvertPILImage, dtype: float32, scale: true}
+      - {type: ConvertBoxes, fmt: cxcywh, normalize: true}
+      policy:
+        epoch: 999

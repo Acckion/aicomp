@@ -1,0 +1,18 @@
+__include__: ['./contextfull800.yml']
+freeze_bn_statistics: true
+mechanism_imports: [extra_iou_metrics]
+gradient_accumulation_steps: 3
+sync_bn: false
+find_unused_parameters: true
+gpu_memory_limit_gib: 8.5
+smoke_steps: 6
+smoke_empty_rank: -1
+checkpoint_freq: 1
+save_epoch_training_states: false
+inference_checkpoint_interval: 3
+train_dataloader:
+  total_batch_size: 3
+  num_workers: 2
+val_dataloader:
+  total_batch_size: 2
+  num_workers: 2

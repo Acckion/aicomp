@@ -1,0 +1,3 @@
+__include__: ['./mechanism_base800.yml']
+freeze_bn_statistics: true
+output_dir: /home/fbohan/AIC/runs/bn_frozen800

@@ -1,0 +1,20 @@
+__include__: ['./mechanism_base800.yml']
+mechanism_imports: ['extra_iou_metrics', 'relative_box_criterion']
+criterion: RelativeBoxCriterion
+freeze_bn_statistics: true
+smoke_empty_rank: 0
+output_dir: /home/fbohan/AIC/runs/relative_box800
+RelativeBoxCriterion:
+  weight_dict: {loss_vfl: 1, loss_bbox: 5, loss_giou: 2, loss_fgl: 0.15, loss_ddf: 1.5}
+  losses: ['vfl', 'boxes', 'local']
+  alpha: 0.75
+  gamma: 2.0
+  reg_max: 32
+  relative_weight: 0.25
+  relative_min_extent: 0.02
+  relative_beta: 0.1
+  matcher:
+    type: HungarianMatcher
+    weight_dict: {cost_class: 2, cost_bbox: 5, cost_giou: 2}
+    alpha: 0.25
+    gamma: 2.0
