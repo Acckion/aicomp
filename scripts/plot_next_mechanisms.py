@@ -86,7 +86,12 @@ def generate():
         status['runs'][name] = {'completed_epochs': len(data[name]), 'planned_epochs': 12,
                                'complete': complete, 'controller': controller, 'progress': progress,
                                'validation': job['validation']}
-        detail = f"epoch {progress.get('epoch')} / batch {progress.get('next_batch')}" if progress else controller.get('stage', '准备中')
+        if controller.get('stage') == 'failed':
+            detail = '训练中断，请查看运行日志'
+        elif complete:
+            detail = '训练完成'
+        else:
+            detail = f"epoch {progress.get('epoch')} / batch {progress.get('next_batch')}" if progress else controller.get('stage', '准备中')
         lines.append(f"{LABELS[name]} · GPU{job['gpu']}\n{len(data[name])}/12轮 · {detail}")
     axes[1, 3].axis('off')
     axes[1, 3].text(0, 1, '\n\n'.join(lines), va='top', fontsize=10)

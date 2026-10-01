@@ -1,4 +1,5 @@
 """Finish screening and package full-data candidates without claiming test AP."""
+import argparse
 import fcntl
 import json
 import os
@@ -35,7 +36,7 @@ def summarize(name):
     return result
 
 
-def main():
+def main(package_saved_candidates=False, gpu=3):
     OUT.mkdir(parents=True, exist_ok=True)
     lock = (OUT / 'queue.lock').open('a')
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -59,25 +60,27 @@ def main():
 
     def run_command(command, stage, name):
         while True:
-            free = int(subprocess.check_output(['nvidia-smi', '-i', '3', '--query-gpu=memory.free',
+            free = int(subprocess.check_output(['nvidia-smi', '-i', str(gpu), '--query-gpu=memory.free',
                        '--format=csv,noheader,nounits'], text=True, timeout=10).strip())
             if free >= 9900:
                 break
-            status('waiting_for_memory', run=name)
+            status('waiting_for_memory', run=name, gpu=gpu)
             time.sleep(10)
-        status(stage, run=name)
+        status(stage, run=name, gpu=gpu)
         with (OUT / 'evaluation.log').open('a') as log:
-            subprocess.run(command, cwd=ROOT, env={**ENV, 'CUDA_VISIBLE_DEVICES': '3'},
+            subprocess.run(command, cwd=ROOT, env={**ENV, 'CUDA_VISIBLE_DEVICES': str(gpu)},
                            stdout=log, stderr=subprocess.STDOUT, check=True)
 
     # Full-data epoch choices are fixed by the previous independent experiment:
     # frozen-BN best epoch 2, dense-view best epoch 3. No train-set AP selection.
     for name, epoch in [('full2000_dense800', 3), ('full2000_bn800', 2)]:
-        if not report['runs'][name]['complete']:
+        if not report['runs'][name]['complete'] and not package_saved_candidates:
             continue
         try:
             folder = OUT / f'{name}_epoch{epoch}_phase2'
             checkpoint = ROOT / 'runs' / name / f'weights_epoch_{epoch:03d}.pth'
+            if len(rows(name)) < epoch or not checkpoint.exists():
+                raise RuntimeError('Selected epoch did not complete or its weights are missing')
             command = [sys.executable, str(ROOT / 'scripts/evaluate_variants.py'),
                        '--checkpoint', str(checkpoint), '--config', str(ROOT / 'configs/ft_aug800_shared3.yml'),
                        '--size', '800', '--method', 'none', '--predict-only',
@@ -90,6 +93,8 @@ def main():
                 assert set(z.namelist()) == expected, 'Missing/unexpected submission filenames'
                 assert z.testzip() is None
             report['packages'][name] = {'epoch': epoch, 'zip': str(archive), 'images': len(expected),
+                                        'source_training_complete': report['runs'][name]['complete'],
+                                        'source_completed_epochs': report['runs'][name]['completed_epochs'],
                                         'selection': 'Fixed epoch from independent train1600/val400 experiment',
                                         'inference': '800 full RGB image, native top100, no flip TTA or Soft-NMS'}
         except Exception:
@@ -119,7 +124,12 @@ def main():
 
 if __name__ == '__main__':
     try:
-        main()
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--package-saved-candidates', action='store_true',
+                            help='Recover completed selected epochs even if later training failed')
+        parser.add_argument('--gpu', type=int, default=3)
+        args = parser.parse_args()
+        main(args.package_saved_candidates, args.gpu)
     except Exception:
         OUT.mkdir(parents=True, exist_ok=True)
         write_json(OUT / 'status.json', {'stage': 'failed', 'traceback': traceback.format_exc()})
