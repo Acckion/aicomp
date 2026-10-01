@@ -1,0 +1,21 @@
+# Isolated Miniconda AICOMP-derived Python3.11 venv; do not install into AICOMP itself.
+# torch/torchvision: https://download.pytorch.org/whl/cu118
+# mmcv-full wheel: https://download.openmmlab.com/mmcv/dist/cu118/torch2.0.0/
+torch==2.0.0+cu118
+torchvision==0.15.1+cu118
+mmcv-full==1.7.2
+numpy==1.26.4
+opencv-python==4.11.0.86
+opencv-python-headless==4.11.0.86
+yapf==0.40.1
+fairscale==0.4.13
+timm==0.6.13
+matplotlib
+pycocotools
+scipy
+six
+terminaltables
+fvcore
+tensorboard
+einops
+addict

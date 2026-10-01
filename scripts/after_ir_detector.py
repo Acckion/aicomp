@@ -9,7 +9,9 @@ import time
 import traceback
 
 ROOT=Path(__file__).resolve().parents[1];OUT=ROOT/'experiments/multimodal_probe'
-GPU=3
+GPU=int(os.environ.get('AICOMP_IR_EVAL_GPU','3'))
+MIN_FREE_MIB=int(os.environ.get('AICOMP_IR_EVAL_MIN_FREE_MIB','9900'))
+EVAL_MEMORY_GIB=float(os.environ.get('AICOMP_IR_EVAL_MEMORY_GIB','8.5'))
 ENV={**os.environ,'CUDA_VISIBLE_DEVICES':str(GPU),'OMP_NUM_THREADS':'2','MKL_NUM_THREADS':'2',
      'LD_LIBRARY_PATH':'/home/fbohan/miniconda3/envs/AICOMP/lib/python3.11/site-packages/nvidia/nvjitlink/lib'}
 def write(stage,**fields):
@@ -34,11 +36,12 @@ def main():
             try:
                 while True:
                     free=int(subprocess.check_output(['nvidia-smi','-i',str(GPU),'--query-gpu=memory.free','--format=csv,noheader,nounits'],text=True).strip())
-                    if free>=9900:break
+                    if free>=MIN_FREE_MIB:break
                     write('waiting_for_memory',epoch=epoch,free_mib=free);time.sleep(30)
                 with (OUT/f'ir_epoch_{epoch:03d}.log').open('a') as log:
                     process=subprocess.Popen([sys.executable,str(ROOT/'scripts/evaluate_ir_complementarity.py'),
-                      '--checkpoint',str(checkpoint),'--output',str(output)],cwd=ROOT,env=ENV,stdout=log,stderr=subprocess.STDOUT)
+                      '--checkpoint',str(checkpoint),'--output',str(output),
+                      '--memory-gib',str(EVAL_MEMORY_GIB)],cwd=ROOT,env=ENV,stdout=log,stderr=subprocess.STDOUT)
                     write('evaluating',epoch=epoch,pid=process.pid)
                     if process.wait():raise RuntimeError(f'IR complement evaluation failed at epoch{epoch}')
                 assert (output/'COMPLETE').exists()

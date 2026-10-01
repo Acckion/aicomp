@@ -1,0 +1,4 @@
+__include__: ['./ir_query800.yml']
+output_dir: /home/fbohan/AIC/runs/ir_query_control800
+IRAlignedDFINE:
+  ir_enabled: false

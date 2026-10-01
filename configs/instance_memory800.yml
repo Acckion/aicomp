@@ -1,0 +1,25 @@
+__include__: ['./mechanism_base800.yml']
+output_dir: /home/fbohan/AIC/runs/instance_memory800
+instance_memory_enabled: true
+epochs: 8
+warmup_epochs: 1
+gradient_accumulation_steps: 6
+checkpoint_format: ema_inference
+inference_checkpoint_interval: 2
+save_epoch_training_states: false
+smoke_empty_rank: 0
+optimizer:
+  lr: 0.00002
+  params:
+    - params: '^(?=.*backbone)(?!.*(?:norm|bn)).*$'
+      lr: 0.000002
+    - params: '^(?=.*instance_memory).*$'
+      lr: 0.0002
+    - params: '^(?=.*(?:encoder|decoder))(?=.*(?:norm|bn))(?!.*instance_memory).*$'
+      weight_decay: 0.0
+train_dataloader:
+  total_batch_size: 2
+  num_workers: 2
+val_dataloader:
+  total_batch_size: 2
+  num_workers: 2

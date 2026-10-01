@@ -62,9 +62,11 @@ def coverage_report(rgb,ir,data):
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--checkpoint',required=True)
     parser.add_argument('--output',required=True);parser.add_argument('--limit',type=int,default=0)
+    parser.add_argument('--memory-gib',type=float,default=8.5)
     args=parser.parse_args();out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
     torch.set_num_threads(2)
-    torch.cuda.set_per_process_memory_fraction(8.5*1024**3/torch.cuda.get_device_properties(0).total_memory,0)
+    if not 0 < args.memory_gib <= 8.5:raise ValueError('Evaluation memory limit must be in (0,8.5] GiB')
+    torch.cuda.set_per_process_memory_fraction(args.memory_gib*1024**3/torch.cuda.get_device_properties(0).total_memory,0)
     config=YAMLConfig(str(ROOT/'configs/ir_detector800.yml'))
     model=config.model;state=torch.load(args.checkpoint,map_location='cpu',weights_only=False)
     weights=state['ema']['module'] if 'ema' in state else state['model']

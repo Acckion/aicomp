@@ -1,0 +1,3 @@
+__include__: ['./instance_memory800.yml']
+output_dir: /home/fbohan/AIC/runs/instance_memory_control800
+instance_memory_enabled: false

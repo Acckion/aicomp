@@ -1,0 +1,24 @@
+__include__: ['./mechanism_base800.yml']
+epochs: 12
+warmup_epochs: 1
+min_lr_factor: 0.1
+freeze_bn_statistics: true
+gradient_accumulation_steps: 6
+smoke_steps: 6
+train_dataloader:
+  total_batch_size: 2
+  num_workers: 2
+val_dataloader:
+  total_batch_size: 2
+  num_workers: 2
+optimizer:
+  lr: 2.0e-05
+  params:
+  - params: '^backbone\.'
+    lr: 2.0e-06
+  - params: '^aux_head\.'
+    lr: 2.0e-04
+  - params: '^(?=.*(?:encoder|decoder))(?=.*(?:norm|bn)).*$'
+    weight_decay: 0.0
+save_epoch_training_states: false
+inference_checkpoint_interval: 1

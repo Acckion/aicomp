@@ -1,0 +1,2 @@
+__include__: ['./aux_detection_base800.yml']
+output_dir: /home/fbohan/AIC/runs/aux_detection_control800

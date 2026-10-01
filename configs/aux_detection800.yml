@@ -1,0 +1,20 @@
+__include__: ['./aux_detection_base800.yml']
+output_dir: /home/fbohan/AIC/runs/aux_detection800
+model: AuxDetectionDFINE
+criterion: AuxDetectionCriterion
+AuxDetectionDFINE:
+  backbone: HGNetv2
+  encoder: HybridEncoder
+  decoder: DFINETransformer
+AuxDetectionCriterion:
+  matcher:
+    type: HungarianMatcher
+    weight_dict: {cost_class: 2, cost_bbox: 5, cost_giou: 2}
+    alpha: 0.25
+    gamma: 2.0
+  weight_dict: {loss_vfl: 1, loss_bbox: 5, loss_giou: 2, loss_fgl: 0.15, loss_ddf: 1.5}
+  losses: [vfl, boxes, local]
+  alpha: 0.75
+  gamma: 2.0
+  reg_max: 32
+  dense_weight: 0.25
