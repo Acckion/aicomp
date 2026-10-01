@@ -1,0 +1,5 @@
+# Optional offline error audit; preserve the AICOMP numerical environment.
+numpy==1.26.4
+opencv-python==4.10.0.84
+tidecv==1.0.1
+pycocotools==2.0.11
