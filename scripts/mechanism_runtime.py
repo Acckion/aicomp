@@ -110,6 +110,13 @@ def install_training_controls(baseline):
                 loss = float(latest_loss[0])
                 if not torch.isfinite(latest_loss[0]).all():
                     raise RuntimeError(f'Non-finite startup loss: {loss}')
+                # Every DDP rank checks its loss; only rank zero publishes the
+                # shared progress file, avoiding concurrent atomic renames.
+                primary = not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0
+                if not primary:
+                    if callback is not None:
+                        callback(next_batch)
+                    return
                 path = Path(output) / 'optimizer_progress.json'
                 state = {'epoch': epoch + 1, 'next_batch': next_batch,
                          'epoch_optimizer_updates': updates[0], 'time': time.time(),

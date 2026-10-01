@@ -1,4 +1,5 @@
 """Persistent two-card IR adaptation, with real DDP smoke before training."""
+import argparse
 import fcntl
 import json
 import os
@@ -23,6 +24,7 @@ def write(stage,**fields):
     tmp.replace(p)
 
 def main():
+    parser=argparse.ArgumentParser();parser.add_argument('--resume',action='store_true');args=parser.parse_args()
     OUT.mkdir(parents=True,exist_ok=True)
     locks=[]
     for path in [OUT/'ir_detector.lock',*(ROOT/f'experiments/mechanism_trials/gpu{g}.lock' for g in GPUS)]:
@@ -39,8 +41,10 @@ def main():
         if output.is_symlink():assert output.resolve()==remote.resolve()
         elif output.exists():raise RuntimeError('Refusing to replace an existing run')
         else:output.symlink_to(remote,target_is_directory=True)
-        if (output/'metrics.jsonl').exists() or (output/'COMPLETE').exists():
+        if (output/'COMPLETE').exists() or ((output/'metrics.jsonl').exists() and not args.resume):
             raise RuntimeError('Refusing to overwrite a started/completed experiment')
+        if args.resume and not (output/'last.pth').exists():
+            raise RuntimeError('Resume requires a full saved last.pth checkpoint')
         while True:
             query=subprocess.check_output(['nvidia-smi','--query-gpu=index,memory.free','--format=csv,noheader,nounits'],text=True)
             free={int(a):int(b) for a,b in (line.split(',') for line in query.splitlines())}
@@ -48,16 +52,19 @@ def main():
             write('waiting_for_memory',free_mib={g:free[g] for g in GPUS});time.sleep(15)
         command=[sys.executable,'-m','torch.distributed.run','--standalone','--nproc-per-node=2',
                  str(ROOT/'scripts/train_ir_detector.py'),'--config',str(ROOT/'configs/ir_detector800.yml'),
-                 '--init-checkpoint',str(ROOT/'checkpoints/gpu6_storage/multimodal_probe/ir_initialization.pth')]
-        with (OUT/'ir_detector_smoke.log').open('a') as log:
-            child=subprocess.Popen(command+['--smoke'],cwd=ROOT,env=ENV,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
-            write('smoke',pid=child.pid)
-            if child.wait():raise RuntimeError('IR peak-resolution DDP smoke failed')
+                 *(['--resume',str(output/'last.pth')] if args.resume else
+                   ['--init-checkpoint',str(ROOT/'checkpoints/gpu6_storage/multimodal_probe/ir_initialization.pth')])]
+        if not args.resume:
+            with (OUT/'ir_detector_smoke.log').open('a') as log:
+                child=subprocess.Popen(command+['--smoke'],cwd=ROOT,env=ENV,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
+                write('smoke',pid=child.pid)
+                if child.wait():raise RuntimeError('IR peak-resolution DDP smoke failed')
         assert 'SMOKE TEST PASSED' in (OUT/'ir_detector_smoke.log').read_text()
         with (OUT/'ir_detector.log').open('a') as log:
-            child=subprocess.Popen(command+['--evaluate-init'],cwd=ROOT,env=ENV,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
+            child=subprocess.Popen(command+([] if args.resume else ['--evaluate-init']),cwd=ROOT,env=ENV,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
         write('training',pid=child.pid,epochs=24,training_images=1600,validation_images=400,
               per_gpu_memory_limit_gib=8.5,per_gpu_batch=2,effective_batch=12,
+              resumed_from=str(output/'last.pth') if args.resume else None,
               purpose='Learn detection on IR and measure unique coverage vs frozen RGB; no deployed detection ensemble.')
         if child.wait():raise RuntimeError('IR training failed')
         assert (output/'COMPLETE').exists()

@@ -374,3 +374,37 @@ run_vl_distillation.py分别在GPU7物理卡4（对照）与7（蒸馏）后台�
 run_ir_detector.py后台控制24轮训练；全量best/last包含优化器/RNG供恢复，每3轮紧凑权重，runs/ir_detector800指向GPU6 SSHFS/multimodal_probe/runs/ir_detector800，不写满GPU7根盘。after_ir_detector.py自动在epoch3/6/12/24使用GPU7物理卡3进行独立验证：IR原生Top100、固定RGB父模型原生Top100，各自同类/score≥.05/IoU50/75/90最大基数一对一匹配，报告IR独有GT、小目标独有GT和分类别覆盖。GT覆盖集合的并集仅离线互补诊断，不是可实现mAP、不导出合并检测/提交、不使用检测器投票/平均。最大基数匹配的重复框、错类与空预测边界检查通过。
 
 plot_ir_detector.py每60秒更新monitoring/ir_detector/overview.png，包括mAP50–95/AP50/AP75/小目标AP及已完成独立诊断的IR独有GT。真正验证后再决定是否投入零初始化残差、局部对齐、质量门控的单模型融合，或检测任务教师监督；该融合尚未实现/启动。机制参考CVPRW2023 Enhanced Thermal-RGB Fusion for Robust Object Detection（https://openaccess.thecvf.com/content/CVPR2023W/PBVS/html/Ahmar_Enhanced_Thermal-RGB_Fusion_for_Robust_Object_Detection_CVPRW_2023_paper.html），其配准/门控设计是研究依据，其他数据集收益不能当作本赛提升。
+
+## 2026-10-02：论文与比赛经验复查，区分未实施机制和历史失败
+
+本轮请求是研究下一步突破策略。重点阅读Co-DETR/H-DETR、AR-CNN，以及CVPR2024/2025 Foundational FSOD、NTIRE2025 CD-FSOD技术报告；核对赛题引用CSSA及BDDS。BDDS出版社全文访问403，仅取得摘要/书目信息，未复现或验证其公式、代码。研究方案不等于已经启动新实验，不把其他数据集增益换算为phase2分数。
+
+先纠正路线：CLIP_EXPERIENCE.md明确记载双流、中间融合、深度残差、门控、独立IR补召回失败；目前IR-only任务是互补性诊断，不是首次提出或已证明有效的突破。该实验第一轮EMA完整验证mAP3.33136，低于直接RGB权重IR起点11.31845。还需区分BN/EMA域适配、可见性与框偏移，不能据此断言IR无用。第二轮训练因rank0/rank1共同rename optimizer_progress.tmp退出，已修复为所有rank检查有限loss、仅rank0写共享进度；真实双进程Gloo、每rank300次回调通过，回调次数完整、最终进度300且无rename冲突。run_ir_detector.py增加显式--resume，从第一轮末全量last.pth恢复优化器、EMA、调度器和各rank RNG，重放未完成第二轮；恢复互补队列和60秒绘图，保留失败状态记录于progress_race_20261002。不干预协作者任务。
+
+### 实验前提：重建输入协议与监督可靠性
+
+- 历史记录为native尺寸+pad32/FP32；当前contextfull800及此前640/800/960为方形Resize。不能将不同划分/权重/输入的旧57.4242与当前54.1655直接作因果比较，但尚未完成原协议复现，不能宣称RGB性能已到极限。应先测保持长宽比、动态anchor和正确padding坐标还原的独立验证，再决定是否改变训练。D-FINE eval_spatial_size固定时缓存anchor，HybridEncoder也有位置编码缓存，不能只去掉Resize就认为支持任意分辨率。该项属于重建审计，不再把尺寸扫参包装成突破。
+- 现有TIDE与候选oracle支持定位/候选归属是重点；GT唯一选择+IoU排序54.1655→64.1832属于不可部署理想干预，不能当成可以通过置信度调参实现的10分空间；单独IoU重排已失败。语言语义监督未直接解决定位、未匹配候选和正样本训练量。
+- 查看modal_audit/examples.png：001033车辆RGB框在IR对应区域大面积落入黑色边界，000152灯具在IR轮廓与框也有偏离迹象。这是少量经过对比度筛选的可视证据，不是总体配准统计或精确位移标签。尺寸匹配检查不能证明GT对IR有效。需按训练图、目标大小和画面位置审计有效视野、局部偏移、IR可见性；若确认偏移，不能对不可见/错位IR区域强制施加RGB框回归监督。
+- 还没有证明官方训练标注存在漏标。先抽查train1600中成熟检测器高分未匹配目标，区分真实漏标、类别政策、重复预测和误检，再决定是否使用训练内的忽略区或伪标签。不能直接把全部未匹配预测加入GT，也不修改验证标签。
+
+### 优先研究实现
+
+1. **真实一对多辅助检测监督**：此前dense_o2o_views.py是增加每图目标的局部四图增强；D-FINE现有encoder辅助层、DN和GO跨层回归匹配也不是Co-DETR的ATSS/FCOS密集检测头。本方向已在9/30提出但未实施，不称新发现。先在encoder特征接一个训练专用ATSS/FCOS头，明确给每个GT多个正位置的分类与框回归；可再引入辅助正query，推理丢弃辅助头。预算内先单头，不一次增加ROI头/P2/新骨干。监督必须能更新目标特征，不能沿用成熟RGB近乎冻结的骨干LR1e-7后声称已充分验证。对照同父权重、相同训练/增强预算；统计每GT正样本数、AP75/90、小目标/密集和非密集损益、稳定后期效果，避免只挑单轮最高。Co-DETR/H-DETR论文没有验证D-FINE或本比赛，不能保证收益。
+2. **单模型Co-DINO强检测预训练迁移**：官方有Objects365→COCO Swin-L权重，是值得保留的较大模型替代，而非再次随机挑骨干。历史B包用Co-DINO支持评分/跨模型框融合不能复制；独立训练/推理一个Co-DINO与该融合不同。先验证AICOMP环境兼容和真实最大尺度AMP/反传显存；每卡8.5GiB限制，batch1、梯度检查点、必要时先冻结骨干再部分解冻。旧MMCV/MMDetection依赖是实施风险，显存/环境未通过前不占用一夜预算。先1600独立holdout验证，再固定配方移植2000；不能用2000已训练图选轮。
+3. **以RGB坐标为基准的目标级跨模态对齐**：条件为训练数据审计证明IR确有可见互补且存在偏移。同一个检测query分别在RGB位置与IR邻域学习取样位置，允许区域位移、无效视野mask，最终仍回归RGB GT；IR作为对象证据而非和RGB同像素相加。原AR-CNN的位移监督依赖双模态分别标注框，本数据只有共同GT，不能直接声称复现。可先用训练内少量配对位置审计确认机制，再评估是否采用RGB检测监督下的隐式对齐。固定正确配对IR、打乱IR、置零IR三组验证；正确配对必须改善RGB困难目标的高IoU检测且显著优于错配，否则只算正则化/波动。Depth先不作为小目标主线；它在75.15%的被抽样小目标上有效覆盖不足10%，这是代理指标而非证明完全无用。
+4. **领域实例记忆，作为备选**：NTIRE2025限制COCO源数据的X-Few获胜方案缓存标注实例特征并适配分类/定位。可借鉴从train1600正确GT区域及真实易混背景构建多原型、尺寸/上下文分组的实例库，用于训练期区域对比或query特征适配；与当前单个CLIP crop全局向量/类别词语蒸馏不同。必须有对象定位或难负监督，不再做同一文本重排小扫参。其少样本跨域与AIC2000图不同，且额外教师/视觉编码器的预训练来源须符合规则，故排在检测监督和IR对齐之后。
+
+### 论文/比赛经验来源与适用边界
+
+- Co-DETR: https://arxiv.org/html/2211.12860v3 ; https://github.com/Sense-X/Co-DETR 。训练专用辅助检测头/定制正query，推理丢弃。官方Swin-L O365→COCO配置 https://github.com/Sense-X/Co-DETR/blob/main/projects/configs/co_dino/co_dino_5scale_swin_large_16e_o365tococo.py 含梯度检查点，支持按比例Resize；论文任务不是AICOMP。
+- H-DETR: https://arxiv.org/html/2207.13080v2 。单独一对多辅助query组与DN机制的目标及分配方式不同；不是增加损失系数。
+- AR-CNN: https://arxiv.org/html/1901.02645v2 ; https://github.com/luzhang16/AR-CNN 。分析位置偏移、框监督偏差和单模态可见对象；需要双模态分别框标注，不能直接套用其shift loss。
+- CSSA赛题引用: https://openaccess.thecvf.com/content/CVPR2023W/PBVS/papers/Cao_Multimodal_Object_Detection_by_Channel_Switching_and_Spatial_Attention_CVPRW_2023_paper.pdf 。轻量通道交换/空间注意力参考，不作为新主线重跑已有中间融合。
+- BDDS赛题引用: https://www.sciencedirect.com/science/article/pii/S1566253525010474 。已读摘要的双向融合/形变敏感目标，出版社全文不可访问，公式和本数据适配待验证。
+- CVPR2024 FSOD获胜方案: https://www.neeharperi.com/files/njustkmg_techreport_cvprw24.pdf ; https://www.neeharperi.com/VPLOW24-Foundational-FSOD-Challenge 。以标注实例IoU选择类别描述并微调具有定位预训练的GroundingDINO/GLIP，包含训练集伪标注；不是直接调用LLM审核框。其使用在线GPT及宽泛外部预训练数据的部分不能复制到本赛。
+- CVPR2025 FSOD报告: https://www.neeharperi.com/files/beaton_techreport_cvprw25.pdf 。类别概念、稀疏标注与检测模型适配；作者明确报告LLM后处理未带来可测收益。模型Nebula-CV未公开，不能作为可下载候选。
+- NTIRE2025主报告: https://arxiv.org/html/2504.10685v1 ; X-Few作者代码 https://github.com/johnmaijer/X-Few-_CD-FSOD 。开放赛道MoE/self-training和闭源赛道实例特征缓存值得理解；宽泛外部数据/支持集设定不等于AIC规则下能复制相同收益。任何训练内伪标注仅用官方训练子集，不使用test_phase2适配/伪标注，不把两阶段权重投票或框平均作为提交。
+- 缺标监督: https://arxiv.org/abs/1806.06986 ; https://arxiv.org/abs/2209.05654 。Soft Sampling与ComplETR解释把未标目标当背景的梯度污染；仅当本数据审计发现对应问题才投入，不先认定标签有错。
+
+判定标准：新增机制须在固定400上有持续整体收益，同时报告AP75/90、小目标、拥挤/非拥挤及类别变化；对极稀少类别不由4个val样本作推广结论。需要场景/序列泛化的从头训练对照，不使用旧模型已见图冒充额外holdout。最终配方固定后使用全2000，不把val绝对分直接换算phase2目标57。以上只有IR任务在继续；新辅助头、Co-DINO、对齐和实例库均尚未启动。
