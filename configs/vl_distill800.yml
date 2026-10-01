@@ -1,0 +1,2 @@
+__include__: ['./vl_distill_base800.yml']
+output_dir: /home/fbohan/AIC/runs/vl_distill800
