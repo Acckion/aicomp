@@ -72,7 +72,7 @@ def generate():
     figure.tight_layout(rect=(0, .05, 1, .94))
     temp = MONITOR / 'overview.tmp.png'; figure.savefig(temp, dpi=120)
     temp.replace(MONITOR/'overview.png'); plt.close(figure)
-    return controller.get('stage') in ['complete', 'failed']
+    return controller.get('stage') in ['complete', 'failed', 'stopped_by_user']
 
 
 if __name__ == '__main__':
