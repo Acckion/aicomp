@@ -1,0 +1,50 @@
+__include__: ['./baseline_common.yml']
+output_dir: /home/fbohan/AIC/runs/scene_rgb800
+validate: true
+epochs: 100
+warmup_epochs: 3
+sync_bn: false
+freeze_bn_statistics: true
+gpu_memory_limit_gib: 6
+gradient_accumulation_steps: 8
+mechanism_imports: [extra_iou_metrics]
+print_freq: 50
+checkpoint_freq: 100
+save_epoch_training_states: false
+inference_checkpoint_interval: 10
+smoke_steps: 8
+smoke_empty_rank: 0
+eval_spatial_size: [800, 800]
+scaler:
+  type: GradScaler
+  enabled: true
+  init_scale: 1.0
+train_dataloader:
+  total_batch_size: 1
+  num_workers: 2
+  dataset:
+    ann_file: /home/fbohan/AIC/data/annotations/scene_train.json
+    transforms:
+      ops:
+        - {type: RandomPhotometricDistort, p: 0.5}
+        - {type: RandomZoomOut, fill: 0}
+        - {type: RandomIoUCrop, p: 0.8}
+        - {type: SanitizeBoundingBoxes, min_size: 1}
+        - {type: RandomHorizontalFlip}
+        - {type: Resize, size: [800, 800]}
+        - {type: SanitizeBoundingBoxes, min_size: 1}
+        - {type: ConvertPILImage, dtype: float32, scale: true}
+        - {type: ConvertBoxes, fmt: cxcywh, normalize: true}
+  collate_fn:
+    base_size: 800
+    base_size_repeat: 3
+    stop_epoch: 90
+val_dataloader:
+  total_batch_size: 1
+  num_workers: 2
+  dataset:
+    ann_file: /home/fbohan/AIC/data/annotations/scene_val.json
+    transforms:
+      ops:
+        - {type: Resize, size: [800, 800]}
+        - {type: ConvertPILImage, dtype: float32, scale: true}
