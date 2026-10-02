@@ -568,3 +568,35 @@ GPU7服务器物理GPU3，自己的gpu3.lock与worker训练锁、余量>=9216MiB
 比赛经验：ICCV2025 AI City Track4主报告 https://openaccess.thecvf.com/content/ICCV2025W/AICity/papers/Tang_The_9th_AI_City_Challenge_ICCVW_2025_paper.pdf 描述排名靠前方法的畸变适配、数据策略与双模型推理，鱼眼场景和本赛不同；本赛规则禁止外部训练数据、测试训练以及简单投票/均框，因此只借鉴针对实际成像几何/域差异设计representation和训练的经验，不复制双模型提交。重新读附件赛题列出的Bi-directional fusion/DSSM https://www.sciencedirect.com/science/article/pii/S1566253525010474 与RGBDT500/RDTTrack https://xuefeng-zhu5.github.io/RGBDT500/ ：前者是SuperYOLO/600epoch及tiny损失，不应把DSSM当新万能损失（已做尺度辅助/NWD负结果）；后者是有初始目标的tracking、prompt/正交融合，不等于未知多目标检测，也不能推断本赛数据必来自该数据集。
 
 下一轮建议先独立做视觉patch增强和对应预训练两条，不以+.1峰值推广。视觉增强需真实/置零/同图空间打乱/其他图错配视觉token消融，改善应覆盖多数常见类和困难分层；对应路线要空间真实性和配对依赖证据，再看AP75/90。原val全查询IoU.9几何覆盖仅33.56%、短边<16仅8.24%也要求检查定位，而不再盲目增query或再试既有tiny后处理。以上是研究筛选和具体实验设计，尚未实现/启动这些新训练，不承诺phase2达到57。
+
+
+## 2026-10-02：SET启发的频谱诊断完成，暂不启动频谱训练
+
+冻结成熟RGB ft_aug800 epoch20 EMA，在官方train1600确定性128图/949GT（800输入短边<16的240、其余709）真实完成7条件P3干预：identity、BG/FG/全部区域3×3或5×5低通，残差强度50%，GT框+1cell halo仅作诊断mask；其他视觉尺度不变。无梯度、无val/test拟合，GT mask不可部署，分数不是AP或一对一召回。运行125.5秒、峰值allocated483.45MiB，GPU1 own gpu1.lock已释放，交给视觉foundation同预算control。
+
+背景3×3低通使小目标IoU≥.75匹配正确类score均值+.00664（1000次image-cluster bootstrap95%CI+.00194~+.01357），但IoU≥.5 score−.00050和最佳几何IoU+.00243的区间跨0；普通目标score@.75−.00051。BG5小目标score@.75+.00462、普通目标−.00146。前景/全区域低通小目标score@.75显著下降约.094~.115，提示保护目标高频必要，但当前理想背景抑制只有微弱信号，不足支持突破性训练投入。暂不盲启频谱训练，资源优先给另两条主线；不据此否定完整SET，只排除本轮P3半强度低通作为高优先级突破。
+
+实现scripts/spectral_probe.py与spectral_probe_summary.py，实际bootstrap已完成并核对949GT；详细说明experiments/spectral_probe/README.md，持久报告checkpoints/gpu6_storage/spectral_probe/train128_p3/{report,bootstrap,records,energy}.json。progress写入已改原子替换，编译检查通过。
+
+## 2026-10-02：Frozen-DETR启发的当前图像局部视觉patch增强已启动
+
+新VFTokensDFINE保留HGNet、HybridEncoder及完整D-FINE head。冻结本地公开CLIP ViT-L/14-336视觉编码器，对当前增强后的RGB四个2×2区域各编码336，去CLS后将4组24×24patch恢复为全图48×48空间图，bias-free 1024→96投影/无affine GroupNorm/局部depthwise/零初始化输出残差注入encoder P3 input projection。区域采样相对整图336有2倍空间采样密度，不等于保留1920原像素。teacher不读取GT、不训练、不进入EMA或detector state；进程级共享冻结teacher，checkpoint需配套相同本地teacher权重。加载teacher使用fork_rng避免干扰两组数据/增强RNG。仅一个检测输出，无模型框集成。零feature因投影/local/output无bias且GN无affine，训练后仍精确零残差。
+
+主vf_tokens800及vf_tokens_control800同ft_aug800/weights_epoch_020.pth原始RGB父、seed20260929、800多尺度至最大992、8轮、batch1累积8。主/控制仅vf_enabled差异，adapter3e-4/RGB主1e-5/骨干1e-6，真实optimizer断言3个adapter tensor都归3e-4组。正式主GPU7物理GPU0 controller2525336/worker2526197；控制GPU7物理GPU1 controller2525337/worker2526156，各仅自己的gpu锁，余量9216MiB及8.5GiB硬cap。已分别通过smoke，主峰值6811.71MiB/控制2428.06MiB。两个正式worker均已3次finite真实优化更新，首个loss均31.9197177887，主正式峰值6814.77MiB。初始独立val400 mAP54.1953/54.1854；跨卡AMP/cuDNN极小差异0.0099分，不能将其视为结构增益。尚无正式完整epoch结论。
+
+最大992/batch1且EMA驻留预检3次真实更新loss32.9797/32.8631/256.5364（末次空GT）；所有梯度有限，update2 project/local有效梯度，teacher始终无梯度，初始同模型enabled/disabled输出精确恒等，zero feature在更新后精确等disabled，real feature产生输出变化，EMA绑定hook归属与strict reload通过，预检peakallocated3985.07MiB。早期预检错误仅为800静态eval位置缓存不能直接评估992，改为800恒等/回载、992真实训练检查；正式没有在错误尺寸评估。adapter正则初版命名错误在真实正式优化前修正并断言，未保留错误学习率训练。
+
+输出runs/vf_tokens*为GPU6 storage/vf_tokens/runs挂载symlink。vf_tokens_plot.py PID2522027每60s更新monitoring/vf_tokens/overview.png，展示mAP@50-95/AP50/AP75/AP90/small AP/loss。主8轮后自动对同一best checkpoint做完整val400 real、zero、空间shuffle、wrong_image、disabled干预；审计batch2且wrong_image显式断言至少2图，避免batch1 roll产生假错图对照。主和control分别独立controller，控制不重复排队。源码scripts/vf_tokens_{adapter,preflight,train,run,plot,ablations}.py及configs/vf_tokens{,_control}800.yml；当前没有证明该路径胜过IR或phase2收益。
+
+
+## 2026-10-02：启动轻量RGB–IR对应预训练与有条件检测接续
+
+用户授权subagents并行。本路线为CMRW启发的轻量适配，不声称复现作者未公开实现。GPU8物理card2、自己的gpu2.lock、各阶段free>=9216MiB、Torch8.5GiB硬上限。冻结已训练ft_aug800 RGB和IR-only epoch24骨干/neck，训练两套384→128→64无坐标输入的1x1内容投影。仅官方train1600成对图；val400 IDs严格不重叠、不建立val/test cache。先第1轮同模态已知图像scale/shift增强对应对比，再3轮加入跨模态往返一致性(.05权重)，总4轮1600updates/轮，动态余弦lr3e-4→3e-5。图像增强只产生同模态真实已知对应，不将RGB框/坐标冒充IR监督。
+
+最大992/batch1真实预检3次AdamW更新通过，peakallocated847.97MiB，损失9.8645/9.1635/9.1182（含跨模态项）；冻结骨干无梯度、projection梯度有限非零、missingIR mask损失0、strict reload均通过。没有EMA：这是冻结backbone下的轻量descriptor预训练，检测接续另要求最大尺寸且EMA驻留预检。早期因GPU8本地archive迁移路径修正、固定诊断和controller终止清理策略补齐，仅重启了自己的早期worker，旧log分别标draft保存；未停止其他任务。最后正式controller3041456、worker3042952、monitor3041457。确认正式41次真实有限更新（而非仅排队），intra-loss约8.90→5.09；不同样本间损失/endpoint不可声称固定对照改善。
+
+固定train图10–13初始诊断：已知同模态变换normalized endpoint .133407、1cell recall .566111、最小feature std .035713、paired cycle .00396011、wrong-image cycle .00395982、entropy5.30152。每轮同一变换同一train图重测。跨模态cycle对候选token的空间排列不敏感，其下降不证明物理配准正确；实时整图shuffle保留原validmask，会改变有效token内容集合，也不能作为纯位置消融。错图诊断使用错图自身mask，不使用当前mask。接续门槛：已知同模态endpoint下降至少5%或1cell recall+.01，paired cycle不得比错图低超过5%，feature std>.001且entropy>.05；这些只是必要筛选，不是IR位置真实性证明。门槛未通过写no_evidence并停止接续，不盲目启动检测。
+
+若门槛通过，自动执行ir_corr_detection_preflight.py→ir_corr800 smoke/8轮检测→ir_corr_control800 smoke/8轮对照，串行稳定队列（不宣称两检测已启动）。两者从相同原始ft_aug800 RGB父、相同IRteacher起步；IRContent sampler零残差初始化，保持原RGB/IR内容路径。冻结对应投影仅做16x16局部内容匹配(.20归一化搜索窗)、熵控制的连续采样网格；独立trainable strength零初始化，原IR特征+strength*tanh的重采样差值作为残差，避免把低分辨率soft对应直接取代成熟IR证据。对应本身不是精确像素配准。新strength lr3e-4，原samplers/RGB/骨干配方不改；关闭correspondence的control，其余相同。batch1累积8、8轮同预算；与ir_joint成熟父模型不同，不能用绝对峰值简单归因。检测预检必须检查新strength第二步非零有限梯度、projection无梯度、EMA驻留/hook归属、zeroIR和原始RGB恒等、空GT、strict reload；预检尚未运行，等待预训练完成。
+
+监控ir_corr_monitor.py每60秒更新train-only loss、已知intra变换endpoint/recall、cycle及后续独立val400 mAP@50-95图。对应预训练不报告mAP或承诺phase2收益。源码ir_corr_pretrain.py/ir_corr_alignment.py/ir_corr_detection_preflight.py/ir_corr_run.py/ir_corr_monitor.py和三个独立configs已同步GPU8，原有其他实验继续。

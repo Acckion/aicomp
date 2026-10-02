@@ -1,0 +1,40 @@
+__include__: ['./mechanism_base800.yml']
+model: VFTokensDFINE
+output_dir: /home/fbohan/AIC/runs/vf_tokens800
+mechanism_imports: [extra_iou_metrics, vf_tokens_adapter]
+VFTokensDFINE:
+  backbone: HGNetv2
+  encoder: HybridEncoder
+  decoder: DFINETransformer
+  vf_enabled: true
+epochs: 8
+warmup_epochs: 1
+gradient_accumulation_steps: 8
+checkpoint_freq: 8
+checkpoint_format: ema_inference
+save_epoch_training_states: false
+inference_checkpoint_interval: 2
+smoke_steps: 8
+smoke_empty_rank: 0
+scaler:
+  type: GradScaler
+  init_scale: 1.0
+  growth_interval: 2000
+optimizer:
+  lr: 0.00001
+  params:
+    - params: '^vf_adapter[.]'
+      lr: 0.0003
+    - params: '^(?=.*backbone)(?!.*(?:norm|bn)).*$'
+      lr: 0.000001
+    - params: '^(?=.*(?:encoder|decoder))(?=.*(?:norm|bn)).*$'
+      weight_decay: 0.0
+train_dataloader:
+  collate_fn:
+    base_size: 800
+    base_size_repeat: null
+  total_batch_size: 1
+  num_workers: 2
+val_dataloader:
+  total_batch_size: 1
+  num_workers: 2

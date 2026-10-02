@@ -1,0 +1,7 @@
+__include__: ['./ir_content800.yml']
+train_dataloader:
+  dataset:
+    archive: /home/fbohan/AIC/migration/AICOMP_IR_2000.zip
+val_dataloader:
+  dataset:
+    archive: /home/fbohan/AIC/migration/AICOMP_IR_2000.zip

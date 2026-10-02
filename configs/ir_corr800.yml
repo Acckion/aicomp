@@ -1,0 +1,51 @@
+__include__:
+- ./mechanism_base800.yml
+model: IRCorrespondenceDFINE
+output_dir: /home/fbohan/AIC/runs/ir_corr800
+mechanism_imports:
+- extra_iou_metrics
+- ir_corr_alignment
+epochs: 8
+warmup_epochs: 1
+gradient_accumulation_steps: 8
+checkpoint_freq: 8
+inference_checkpoint_interval: 2
+optimizer:
+  lr: 1.0e-05
+  params:
+  - params: ^ir_corr_strength$
+    lr: 0.0003
+  - params: ^ir_samplers\.
+    lr: 0.0003
+  - params: ^(?=.*backbone)(?!.*(?:norm|bn)).*$
+    lr: 1.0e-06
+  - params: ^(?=.*(?:encoder|decoder))(?=.*(?:norm|bn)).*$
+    weight_decay: 0.0
+train_dataloader:
+  total_batch_size: 1
+  num_workers: 2
+  dataset:
+    type: PairedIRCoco
+    archive: /home/fbohan/AIC/migration/AICOMP_IR_2000.zip
+    training: true
+    size: 800
+    transforms: null
+val_dataloader:
+  total_batch_size: 1
+  num_workers: 2
+  dataset:
+    type: PairedIRCoco
+    archive: /home/fbohan/AIC/migration/AICOMP_IR_2000.zip
+    training: false
+    size: 800
+    transforms: null
+scaler:
+  type: GradScaler
+  enabled: true
+  init_scale: 1.0
+IRCorrespondenceDFINE:
+  backbone: HGNetv2
+  encoder: HybridEncoder
+  decoder: DFINETransformer
+  ir_enabled: true
+  correspondence_enabled: true
