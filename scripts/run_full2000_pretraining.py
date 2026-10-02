@@ -12,12 +12,19 @@ ROOT=Path(__file__).resolve().parents[1]
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('--method',choices=['pool','reset'],required=True);p.add_argument('--gpu-index',type=int,required=True);p.add_argument('--large-probe',action='store_true');a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('--method',choices=['pool','reset'],required=True);p.add_argument('--gpu-index',type=int,required=True);p.add_argument('--large-probe',action='store_true');p.add_argument('--resume');p.add_argument('--resume-batch',type=int,choices=[1,2],default=1);a=p.parse_args()
     assert not a.large_probe or a.method=='pool'
+    if a.resume:
+        assert Path(a.resume).is_file()
+        import torch
+        saved=torch.load(a.resume,map_location='cpu',weights_only=False)
+        assert saved.get('checkpoint_format')!='ema_inference'
+        assert all(k in saved for k in ['model','ema','optimizer','scaler','lr_warmup_scheduler','rng_by_rank','last_epoch'])
+        del saved
     signal.pthread_sigmask(signal.SIG_UNBLOCK,{signal.SIGTERM,signal.SIGINT})
     out=ROOT/'experiments/full2000_pretraining'/a.method;out.mkdir(parents=True,exist_ok=True)
     own=(out/'controller.lock').open('a');fcntl.flock(own,fcntl.LOCK_EX|fcntl.LOCK_NB)
-    gpu=(ROOT/f'experiments/mechanism_trials/gpu{a.gpu_index}.lock').open('a');child=None
+    gpu=(ROOT/f'experiments/mechanism_trials/gpu{a.gpu_index}.lock').open('a');child=None;stage_started=0
     def status(stage,**extra):
         t=out/'status.tmp';t.write_text(json.dumps({'stage':stage,'time':time.time(),'controller_pid':os.getpid(),'method':a.method,**extra},indent=2));t.replace(out/'status.json')
     def memory_ready(stage):
@@ -27,17 +34,18 @@ def main():
             status('waiting_memory',next_stage=stage,free_mib=free);time.sleep(15)
     env={**os.environ,'CUDA_VISIBLE_DEVICES':str(a.gpu_index),'OMP_NUM_THREADS':'2','MKL_NUM_THREADS':'2'}
     def run(stage,command):
-        nonlocal child
+        nonlocal child,stage_started
         memory_ready(stage)
+        stage_started=time.time()
         with (out/f'{stage}.log').open('ab') as log:
             child=subprocess.Popen([sys.executable,'-u',*command],cwd=ROOT,env=env,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
         status(stage,worker_pid=child.pid,run_name=name)
         return child.wait()
     signal.signal(signal.SIGTERM,lambda n,f:sys.exit(128+n));signal.signal(signal.SIGINT,lambda n,f:sys.exit(128+n))
     try:
-        batch=1
+        batch=a.resume_batch if a.resume else 1
         probe=ROOT/'experiments'/('scene_batch_probe_large' if a.large_probe else 'scene_batch_probe')
-        while True:
+        while not a.resume:
             if (probe/'comparison.json').exists():
                 comparison=json.loads((probe/'comparison.json').read_text())
                 for b in [1,2]:
@@ -54,10 +62,11 @@ def main():
         while True:
             try:fcntl.flock(gpu,fcntl.LOCK_EX|fcntl.LOCK_NB);break
             except BlockingIOError:status('waiting_existing_task');time.sleep(15)
-        for selected in ([2,1] if batch==2 else [1]):
+        for selected in ([batch] if a.resume else ([2,1] if batch==2 else [1])):
             name=f'full2000_obj365_{a.method}800'+('_b2' if selected==2 else '')
             output=ROOT/'runs'/name
-            assert not (output/'metrics.jsonl').exists() and not (output/'COMPLETE').exists()
+            assert not (output/'COMPLETE').exists()
+            assert a.resume or not (output/'metrics.jsonl').exists()
             output.mkdir(parents=True,exist_ok=True)
             policy={'training_images':2000,'epochs':100,'effective_batch':8,'selected_micro_batch':selected,
                     'source':'public Objects365-only X; no competition parent weights',
@@ -67,6 +76,14 @@ def main():
                     'note':'Parallel full-data hypothesis trial, not confirmation of shadow or phase2 improvement.'}
             (output/'selection_policy.json').write_text(json.dumps(policy,indent=2))
             config=ROOT/'configs'/(name+'.yml')
+            if a.resume:
+                result=json.loads((ROOT/'experiments/scene_semantic_init'/name/'preflight.json').read_text())
+                assert result['stage']=='passed' and result['training_images']==2000 and result['validation_disabled']
+                command=[str(ROOT/'scripts/train_ir_content.py'),'--config',str(config),'--resume',str(Path(a.resume).resolve())]
+                if run('training',command):raise RuntimeError('Resumed full-data training failed; no automatic restart')
+                if not (output/'COMPLETE').exists() and (output/'MIGRATION_READY').exists() and (output/'MIGRATION_READY').stat().st_mtime>=stage_started:
+                    status('checkpointed_for_migration',run_name=name);return
+                assert (output/'COMPLETE').exists();status('complete',run_name=name);return
             code=run('preflight_b'+str(selected),[str(ROOT/'scripts/scene_semantic_preflight.py'),'--name',name])
             if code:
                 if selected==2:
@@ -81,6 +98,8 @@ def main():
                     assert not (output/'metrics.jsonl').exists();continue
                 raise RuntimeError('Full-data batch1 smoke failed')
             if run('training',command):raise RuntimeError('Full-data training failed; no automatic restart')
+            if not (output/'COMPLETE').exists() and (output/'MIGRATION_READY').exists() and (output/'MIGRATION_READY').stat().st_mtime>=stage_started:
+                status('checkpointed_for_migration',run_name=name);return
             assert (output/'COMPLETE').exists();status('complete',run_name=name);return
         raise RuntimeError('No viable full-data microbatch')
     except Exception as e:status('failed',error=repr(e));raise

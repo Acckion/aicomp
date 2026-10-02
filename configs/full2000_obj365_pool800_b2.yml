@@ -4,3 +4,4 @@ gradient_accumulation_steps: 4
 gpu_memory_limit_gib: 8.5
 train_dataloader:
   total_batch_size: 2
+summary_dir: /home/fbohan/AIC/experiments/full2000_pretraining/pool/local_summary

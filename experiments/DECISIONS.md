@@ -733,3 +733,12 @@ GPU8 pool首轮完整mAP36.9863、小目标10.2884；多个已覆盖源类别已
 
 
 02:05增补：GPU7物理7旧native_grid2_control完成8轮，原controller2787267/worker2789092已不存在，自己的gpu7锁实测可用、free9511MiB。仅停止仍无worker的等待探针2943910/fullpool2943911（身份和stage核实），转卡7后新controller2945929/2945930；探针worker2945936已真实probing batch1，fullpool仍等待probe，非正式训练。semantic正式第4轮800/1610、全量reset第1轮800/2000均有100个真实optimizer更新、有限loss，GPU6/GPU8三个影子worker存活。不同年龄AP不作为收益排名。
+
+
+## 2026-10-03 02:19：全量pool日志I/O迁移，完整状态已恢复
+
+全量pool b2启动最大992预检3次实际更新通过，peak6007.98MiB；完整smoke通过peak6029.15MiB；旧worker2949694正式更新已核实。短吞吐探针2.0179x不能外推正式速度。正式初期主线程/事件写入线程出现远程FUSE等待，远程目录小文件write+unlink实测2.496秒，本机近0；不是GPU硬cap OOM。只对新全量pool b2设置summary_dir到本机experiments/full2000_pretraining/pool/local_summary，模型、批2/累积4、EMA、LR及100轮不改。
+
+核实身份后向2949694发送SIGUSR1，在optimizer边界完整保存migration.pth 1014169358 bytes/MIGRATION_READY。原controller2945930因未COMPLETE留下AssertionError terminal，属于主动迁移退出，不是数值错误；新controller增加显式full-state resume及识别本次worker新生成迁移标记，不能用旧标记遮掩意外退出。运行中的旧controller代码不会动态更新。监督进程2955303只在marker存在、旧worker终止且旧controller锁释放后启动resume controller2956636/worker2958114，同GPU7物理7，严格完整状态加载。
+
+02:19实际新worker3次finite更新，next_batch12、loss35.7587、LR1.2667e-5（主组）已接续而非reset到零；旧epoch未完成，约140个microbatch从边界重播，非位级相同训练。io_resume_verified.json保存真实cmdline和新时间戳，不把旧审计文件当恢复证明。local_summary实际文件存在。正式速度须看完整轮次，暂不保证短测2倍。完整检查点仍远端durable保存；未迁移或停止任何其他用户任务，其他影子和全量reset继续。summary_dir配置解析、有效batch8/100epoch验证、py_compile通过。线上最好仍49.986，目标57未实现。
