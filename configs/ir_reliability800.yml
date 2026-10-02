@@ -1,0 +1,12 @@
+__include__: ['./ir_content800.yml']
+model: ReliabilityIRDFINE
+output_dir: /home/fbohan/AIC/runs/ir_reliability800
+mechanism_imports: [extra_iou_metrics, next_ir_reliability]
+ReliabilityIRDFINE:
+  backbone: HGNetv2
+  encoder: HybridEncoder
+  decoder: DFINETransformer
+  reliability_enabled: true
+  modality_dropout: 0.15
+checkpoint_format: ema_inference
+save_epoch_training_states: false

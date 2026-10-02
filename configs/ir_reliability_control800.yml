@@ -1,0 +1,4 @@
+__include__: ['./ir_reliability800.yml']
+output_dir: /home/fbohan/AIC/runs/ir_reliability_control800
+ReliabilityIRDFINE:
+  reliability_enabled: false

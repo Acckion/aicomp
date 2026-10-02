@@ -1,0 +1,4 @@
+__include__: ['./roi_coverage800.yml']
+output_dir: /home/fbohan/AIC/runs/roi_coverage_control800
+CoverageROIDFINE:
+  coverage_enabled: false

@@ -1,0 +1,10 @@
+__include__: ['./native_roi800.yml']
+model: CoverageROIDFINE
+output_dir: /home/fbohan/AIC/runs/roi_coverage800
+mechanism_imports: [extra_iou_metrics, next_roi_coverage]
+CoverageROIDFINE:
+  backbone: HGNetv2
+  encoder: HybridEncoder
+  decoder: DFINETransformer
+  coverage_enabled: true
+  size: 800
