@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import torch
 import argparse
+import importlib
 import semantic_init_rows
 import torch.nn.functional as F
 import train_baseline as baseline
@@ -15,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('--name',choices=['scene_semantic_init800','scene_rgb_fastcontrol800','scene_obj365_reset800','scene_obj365_pool800','full2000_obj365_pool800','full2000_obj365_reset800','full2000_obj365_pool800_b2','full2000_obj365_reset800_b2','full2000_semantic_init800','full2000_semantic_init800_b2'],required=True);args=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('--name',choices=['scene_semantic_init800','scene_rgb_fastcontrol800','scene_obj365_reset800','scene_obj365_pool800','scene_obj365_pool800_twowheel','full2000_obj365_pool800','full2000_obj365_reset800','full2000_obj365_pool800_b2','full2000_obj365_reset800_b2','full2000_semantic_init800','full2000_semantic_init800_b2'],required=True);args=p.parse_args()
     torch.set_num_threads(2)
     torch.manual_seed(20260929)
     cfg = YAMLConfig(str(ROOT / 'configs' / (args.name+'.yml')))
@@ -26,6 +27,8 @@ def main():
     pooled = '_obj365_pool800' in args.name
     if pooled:
         import taxonomy_pooling
+    for name in cfg.yaml_cfg.get('mechanism_imports', []):
+        importlib.import_module(name)
     source = 'dfine_x_obj365.pth' if '_obj365_' in args.name else 'dfine_x_obj2coco.pth'
     cfg.tuning = str(ROOT / 'checkpoints' / source)
     install_training_controls(baseline)

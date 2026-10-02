@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('--name',choices=['scene_semantic_init800','scene_rgb_fastcontrol800','scene_obj365_reset800','scene_obj365_pool800'],required=True);p.add_argument('--gpu-index',type=int,required=True);p.add_argument('--resume');args=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('--name',choices=['scene_semantic_init800','scene_rgb_fastcontrol800','scene_obj365_reset800','scene_obj365_pool800','scene_obj365_pool800_twowheel'],required=True);p.add_argument('--gpu-index',type=int,required=True);p.add_argument('--resume');args=p.parse_args()
     OUT=ROOT/'experiments/scene_semantic_init'/args.name;OUT.mkdir(parents=True,exist_ok=True)
     signal.pthread_sigmask(signal.SIG_UNBLOCK, {signal.SIGTERM, signal.SIGINT})
     lock = (ROOT/f'experiments/mechanism_trials/gpu{args.gpu_index}.lock').open('a')

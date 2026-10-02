@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'monitoring/scene_rgb'
 OUT.mkdir(parents=True, exist_ok=True)
-RUNS = ['scene_rgb800', 'scene_rgb_fastcontrol800', 'scene_semantic_init800', 'scene_obj365_reset800', 'scene_obj365_pool800']
+RUNS = ['scene_rgb800', 'scene_rgb_fastcontrol800', 'scene_semantic_init800', 'scene_obj365_reset800', 'scene_obj365_pool800', 'scene_obj365_pool800_twowheel']
 
 
 def evidence(all_rows):
@@ -33,7 +33,8 @@ def evidence(all_rows):
             'estimated_remaining_hours':statistics.median(seconds)*(100-last['epoch'])/3600 if seconds else None}
     for main, control in [('scene_semantic_init800','scene_rgb_fastcontrol800'),
                           ('scene_obj365_reset800','scene_rgb_fastcontrol800'),
-                          ('scene_obj365_pool800','scene_obj365_reset800')]:
+                          ('scene_obj365_pool800','scene_obj365_reset800'),
+                          ('scene_obj365_pool800_twowheel','scene_obj365_pool800')]:
         a = {r['epoch']:r for r in all_rows[main]}; b = {r['epoch']:r for r in all_rows[control]}
         common = sorted(set(a)&set(b))
         # Three matched epochs after warmup; no automatic submission promotion.
