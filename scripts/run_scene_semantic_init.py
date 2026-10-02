@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('--name',choices=['scene_semantic_init800','scene_rgb_fastcontrol800','scene_obj365_reset800','scene_obj365_pool800','scene_obj365_pool800_twowheel','scene_obj365_pool800_airqueries'],required=True);p.add_argument('--gpu-index',type=int,required=True);p.add_argument('--resume');p.add_argument('--minimum-free-mib',type=int,default=7168);args=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('--name',choices=['scene_semantic_init800','scene_rgb_fastcontrol800','scene_obj365_reset800','scene_obj365_pool800','scene_obj365_pool800_twowheel','scene_obj365_pool800_airqueries','scene_obj365_pool800_subtypedn'],required=True);p.add_argument('--gpu-index',type=int,required=True);p.add_argument('--resume');p.add_argument('--minimum-free-mib',type=int,default=7168);args=p.parse_args()
     OUT=ROOT/'experiments/scene_semantic_init'/args.name;OUT.mkdir(parents=True,exist_ok=True)
     signal.pthread_sigmask(signal.SIG_UNBLOCK, {signal.SIGTERM, signal.SIGINT})
     lock = (ROOT/f'experiments/mechanism_trials/gpu{args.gpu_index}.lock').open('a')
@@ -54,6 +54,11 @@ def main():
                 run('coverage', [str(ROOT/'scripts/audit_air_query_coverage.py'), '--config',str(ROOT/'configs'/(args.name+'.yml')), '--output',str(OUT/'coverage')])
                 if not json.loads((OUT/'coverage/report.json').read_text())['launch_supported']:
                     status('rejected_geometry_gate', run_name=args.name)
+                    return
+            if args.name.endswith('_subtypedn'):
+                run('subtype_support', [str(ROOT/'scripts/audit_subtype_dn.py'), '--config',str(ROOT/'configs'/(args.name+'.yml')), '--output',str(OUT/'subtype_support')])
+                if not json.loads((OUT/'subtype_support/report.json').read_text())['launch_supported']:
+                    status('rejected_subtype_support_gate', run_name=args.name)
                     return
             run('preflight', [str(ROOT/'scripts/scene_semantic_preflight.py'),'--name',args.name])
             assert json.loads((OUT/'preflight.json').read_text())['actual_updates'] == 3
