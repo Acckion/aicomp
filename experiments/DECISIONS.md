@@ -516,3 +516,17 @@ run_gpu8_successors.py两个远端持久controller已启动（当前等待setup/
 用户询问为何等待并要求提前开始。旧等待是先看旧对照再投入的资源策略，并非技术依赖；两个新任务均固定同一个RGB父权重，数据/环境已完整校验，因此新增--start-independent跳过GPU7结果前提，其余setup验证、GPU锁、余量检查和真实预检保留。GPU8 card2 roi_coverage_control800已经正式第1轮完成3次优化，loss28.2132、峰值allocated7199MiB；GPU7当前roi_coverage800不受影响。GPU8 card4 ir_reliability800最大992、batch2、空GT三次真实反传已通过，peakallocated7630MiB，正在smoke/正式启动阶段；后续gate-off对照仍同卡顺序运行。
 
 首次启动暴露GPU8新目录缺少experiments/mechanism_trials锁目录，已修复创建；IR预检首次发现缺失IR时局部variance=0的sqrt导数导致非有限梯度，未跳过断言。将variance在sqrt前clamp_min(1e-8)，新增混合有效/缺失IR零初始化CPU backward检查有限，重测真实GPU三个step loss27.4459/27.4672/108.7675、门控非零梯度、置零IR恒等、EMA归属和严格回载全部通过；失败日志保留。此为数值稳定性修复，不将其说成性能增益。
+
+## 2026-10-02：沿已验证IR收益继续做内部机制审计
+
+用户认可约1分收益，要求继续寻找突破。严格同epoch8比较IR55.1198/RGB对照53.9940，差1.12579；类别AP light+8.8694、car+2.6002、boat+1.0037，person−.0849/animal−.0294。light与car合计贡献约85%的净macro AP差，不是实例召回提升85%，也不能简单归因热目标。val400这些类GT light294、car318、person1209、animal630。所有数字来自已经完成的原metrics，而非新的调参评测。正确IR相对置零的AP90 light+2.834、boat+1.934、garbage+1.009，仍有bicycle−.359，不能只看总峰值。GPU8门控实验第3轮55.2204、第4轮55.2039，仍待门控关闭对照，尚不是再一次突破。
+
+确认实际D-FINE路径：encoder logits的top300由RGB产生，IRContent只在后三层decoder注入，IR不参与最初候选选择。但128张确定性等间隔train1600图（无增强、无val/test拟合）的trained IR模型诊断显示921GT在第一IR层之前的无类别/分数几何候选覆盖IoU.3/.5/.75/.9为916/901/790/382，最终917/902/796/397。因此这个训练子集不支持“多数目标完全无候选”作为主要解释；它是训练内、无类无排序的可达性上界，不等于完整AP错误分解或phase2覆盖。helper首次误用了orig_size翻转，导致非法GT比较，已保留report_invalid_gt_size_order.json但排除结论；按本仓库orig_size=[w,h]与COCO image width/height显式校验后重新完成全部128图，上述为修正结果，原训练代码及评测未改。
+
+三层query均值绝对shift .002616/.000921/.001152（800坐标约2.09/.74/.92像素），>=.054的饱和比例均0；平均有效采样约94.2%，约50.8%query半径触及最小.025。统计包含背景query，不能证明前景已经配准，但不支持盲目扩大.06偏移范围。
+
+已启动probe_ir_information.py，在同一个best权重、同val400、同RGB、同有效IRmask与位置编码下，依次real/feature置零仅geometry/同图空间shuffle/全局均值feature，区分空间内容、全局背景和几何先验。旧zeroIR同时去掉有效mask及位置路径，不能独立证明feature内容贡献。新干预是推理分布改变，不是训练效果证据。GPU7物理GPU6自身锁，待spatial audit结束后自动执行，无训练、无提交或test数据。
+
+后续设计依据：若局部IR空间结构贡献明确，优先让已证明有效的对齐路径带动IR高层/neck小范围联合适配（仅最终RGB坐标GT监督，避免IR独立拟合不对应的RGB框）；再验证IR在候选形成前参与表征和类别选择，保持单检测头/300query而非两模型输出拼接。若仅几何或全局背景贡献，则先处理语义对应/局部可靠性，不盲目扩展双流网络。逐项同预算对照，不把多个损失及尺度同时叠加。AR-CNN https://arxiv.org/abs/1901.02645 涉及区域对齐监督，其条件不能直接搬到本赛缺乏IR框配准标签；MDQF https://arxiv.org/abs/2601.08458 为双分支query交互提供机制参考，不能把独立RGB/TIR预测或论文提升当本赛可合规融合成果。
+
+IR四条件完整val400探针已完成：real mAP55.1707、geometry_only54.0516、spatial_shuffled54.0754、global_mean54.5718。real相对geometry_only+1.1191、相对空间shuffle+1.0953、相对global_mean+.5989。这支持当前路径确实依赖IR内容，且局部空间内容比仅全局均值有额外作用；仍是冻结模型推理干预，不能将global_mean的差直接分解成独立训练收益，也不证明对齐偏移正确。real/geometry_only类AP light53.0927/44.2347、car60.3099/57.8815，收益集中与同预算RGB对照一致。此结果将下一轮优先级收敛到IR高层与neck的联合适配、随后更早的类条件内容交互；不优先扩大固定偏移范围或无依据增加query数。
