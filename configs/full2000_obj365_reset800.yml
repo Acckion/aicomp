@@ -1,0 +1,6 @@
+__include__: ['./scene_obj365_reset800.yml']
+output_dir: /home/fbohan/AIC/runs/full2000_obj365_reset800
+validate: false
+train_dataloader:
+  dataset:
+    ann_file: /home/fbohan/AIC/data/annotations/train2000.json

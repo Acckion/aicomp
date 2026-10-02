@@ -710,3 +710,12 @@ plot_scene_training新增12类AP@50-95图monitoring/scene_rgb/per_class.png及ev
 taxonomy_pooling分类汇总由每大类单独index_select/max改为统一gather/mask/max，源权重、类别定义、目标残差与persistent state keys不变；新索引/mask仅是由已检查GROUPS推导的non-persistent buffer。CPU float64随机非零损失权重检查输出精确相等、全部参数和输入梯度1e-12一致；GPU7卡4自己的锁、512MiB上限独立小探针（peak183.48MiB）在最大992对应20181 memory token与300decoder token检查FP16输出精确相等、参数及输入梯度1e-4一致。分类头独立fwd/bwd循环快1.7575x/3.1273x，包含同步和检查开销，不能外推整轮同比提速。
 
 GPU8 pool首轮完整mAP36.9863、小目标10.2884；多个已覆盖源类别已有AP，但UAV仅4.0594、tricycle41.8164基于5GT不可稳定解释。此为公开预训练知识的早期恢复，不是比赛最佳或57证据。CPU严格回载首轮完整model/EMA/optimizer/scaler/schedule/RNG检查且7个成熟分类头的新/旧forward精确相等后，保留968MiB完整hardlink last_before_vectorization.pth。只停止验证身份的旧controller2731711/worker2740175；从该完整epoch1检查点恢复新controller2984138/worker2984158，原batch1/累积8/学习率进度和100轮预算不变。unfinished epoch2少量更新从epoch1边界重播，已完成metrics不删除；旧audit200是更新100间隔写的下界，checkpoint schedule_step_index=202。vectorization_resume.json保存完整证据，不能把新worker审计计数重置称为从头重训。
+
+
+## 2026-10-03：两组全量公开预训练候选准备并真实排队
+
+用户57+与多卡并行目标继续active。新full2000_obj365_pool800/reset800各100轮，从公开Objects365-only重新训练全部2000图，无比赛父权重；validate=false，不拿train2000或已见过的390图评测选择best。同步影子scene分组1610/390实验继续，提供同阶段机制比较。全量只预先保留40/60/80/100阶段作为候选范围，最终仍需独立影子趋势与官方反馈，不按全量train AP选轮，也不把准备全量称为机制已有效。
+
+分别GPU7物理0/1自己的任务锁；controller2921562(pool)/2921563(reset)已实际启动并在waiting_batch_probe阶段。等待已验证存活的batch probe2904637先完成，后者仍等待live native_grid1_control2789087锁；全量controller当前尚无GPU训练worker。batch2需3次有限真实更新、比batch1吞吐>=1.1x且峰值<=5800MiB，否则batch1。两者有效batch均8；full2000的独立最大992/EMA驻留/3更新/空GT/strict reload预检和smoke仍须通过才能正式训练，batch2在正式训练之前失败允许有日志回退batch1，不对失败正式训练盲目重启。6GiB硬cap、每阶段起步空余7GiB、不停止其他任务。
+
+4份静态配置（两方法×microbatch1/2）已通过实际YAML继承解析、100epochs/validate=false/有效batch8、输出名与config名一致、2000图数量及全部文件存在检查。preflight增加全量模式：train IDs严格等于影子train+val的官方2000全集；没有独立heldout、group_disjoint记null，结束有限输出检查使用训练图800，不创建或报告验证AP。输出4个独立run均经GPU6 durable storage/full2000_pretrain/runs保存，避免根盘不足。全量loss/分类/框/GIoU/FGL/LR曲线monitoring/scene_rgb/full2000.png每60秒更新，明确NO independent AP。尚未声称batch2、全量预检、正式训练或线上57已达成。

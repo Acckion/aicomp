@@ -105,6 +105,29 @@ def draw():
     fig.tight_layout(rect=(0,.07,1,.96))
     tmp=OUT/f'per_class.{os.getpid()}.png';fig.savefig(tmp,dpi=130);plt.close(fig)
     tmp.replace(OUT/'per_class.png')
+    fig, axes = plt.subplots(2,3,figsize=(15,8))
+    for method in ['pool','reset']:
+        for suffix in ['', '_b2']:
+            name='full2000_obj365_'+method+'800'+suffix
+            path=ROOT/'runs'/name/'metrics.jsonl'
+            rows=[]
+            if path.exists():
+                for line in path.read_text().splitlines():
+                    try:rows.append(json.loads(line))
+                    except json.JSONDecodeError:pass
+            for ax,key,title in zip(list(axes.flat)[:5],['loss','loss_vfl','loss_bbox','loss_giou','loss_fgl'],['Loss','Classification loss','Box loss','GIoU loss','FGL loss']):
+                pairs=[(r['epoch'],r['train'][key]) for r in rows if key in r.get('train',{})]
+                if pairs:ax.plot(*zip(*pairs),marker='o',label=method+(' batch2' if suffix else ' batch1'))
+                ax.set_title(title)
+            pairs=[(r['epoch'],max(r['lr'])) for r in rows if r.get('lr')]
+            if pairs:axes.flat[5].plot(*zip(*pairs),marker='o',label=method+(' batch2' if suffix else ' batch1'))
+    axes.flat[5].set_title('Largest parameter-group LR')
+    for ax in axes.flat:
+        ax.set_xlabel('epoch');ax.grid(alpha=.25)
+        if ax.lines:ax.legend(fontsize=8)
+    fig.suptitle('Full2000 public-pretraining candidates | NO independent AP | '+time.strftime('%F %T'))
+    fig.tight_layout();tmp=OUT/f'full2000.{os.getpid()}.png';fig.savefig(tmp,dpi=130);plt.close(fig)
+    tmp.replace(OUT/'full2000.png')
 
 if __name__ == '__main__':
     lock = (OUT / 'monitor.lock').open('a')
