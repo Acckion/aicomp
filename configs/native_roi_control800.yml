@@ -1,0 +1,4 @@
+__include__: ['./native_roi800.yml']
+output_dir: /home/fbohan/AIC/runs/native_roi_control800
+NativeROIDFINE:
+  roi_enabled: false

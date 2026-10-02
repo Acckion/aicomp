@@ -1,0 +1,4 @@
+__include__: ['./ir_content800.yml']
+output_dir: /home/fbohan/AIC/runs/ir_content_control800
+IRContentDFINE:
+  ir_enabled: false

@@ -1,0 +1,52 @@
+__include__: ['./mechanism_base800.yml']
+model: NativeROIDFINE
+output_dir: /home/fbohan/AIC/runs/native_roi800
+mechanism_imports: [extra_iou_metrics, native_roi]
+NativeROIDFINE:
+  backbone: HGNetv2
+  encoder: HybridEncoder
+  decoder: DFINETransformer
+  roi_enabled: true
+  size: 800
+  roi_topk: 64
+epochs: 8
+warmup_epochs: 1
+gradient_accumulation_steps: 4
+checkpoint_freq: 8
+checkpoint_format: ema_inference
+save_epoch_training_states: false
+inference_checkpoint_interval: 2
+smoke_steps: 4
+smoke_empty_rank: 0
+optimizer:
+  lr: 0.00001
+  params:
+    - params: '^native_roi\.'
+      lr: 0.0003
+    - params: '^(?=.*backbone)(?!.*(?:norm|bn)).*$'
+      lr: 0.000001
+    - params: '^(?=.*(?:encoder|decoder))(?=.*(?:norm|bn)).*$'
+      weight_decay: 0.0
+train_dataloader:
+  total_batch_size: 2
+  num_workers: 2
+  dataset:
+    type: NativeRGBCoco
+    training: true
+    size: 800
+    transforms: null
+  collate_fn:
+    type: NativeRGBCollate
+    base_size: 800
+    stop_epoch: 8
+val_dataloader:
+  total_batch_size: 2
+  num_workers: 2
+  dataset:
+    type: NativeRGBCoco
+    training: false
+    size: 800
+    transforms: null
+  collate_fn:
+    type: NativeRGBCollate
+    base_size: 800
