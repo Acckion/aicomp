@@ -18,8 +18,10 @@ def main():
     p=argparse.ArgumentParser();p.add_argument('--name',choices=['scene_semantic_init800','scene_rgb_fastcontrol800','scene_obj365_reset800','scene_obj365_pool800','full2000_obj365_pool800','full2000_obj365_reset800','full2000_obj365_pool800_b2','full2000_obj365_reset800_b2'],required=True);args=p.parse_args()
     torch.set_num_threads(2)
     torch.manual_seed(20260929)
-    torch.cuda.set_per_process_memory_fraction(6 * 1024**3 / torch.cuda.get_device_properties(0).total_memory)
     cfg = YAMLConfig(str(ROOT / 'configs' / (args.name+'.yml')))
+    limit=cfg.yaml_cfg.get('gpu_memory_limit_gib',6)
+    assert 0<limit<=8.5
+    torch.cuda.set_per_process_memory_fraction(limit * 1024**3 / torch.cuda.get_device_properties(0).total_memory)
     full = args.name.startswith('full2000_')
     pooled = '_obj365_pool800' in args.name
     if pooled:

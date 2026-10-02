@@ -12,7 +12,8 @@ ROOT=Path(__file__).resolve().parents[1]
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('--method',choices=['pool','reset'],required=True);p.add_argument('--gpu-index',type=int,required=True);a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('--method',choices=['pool','reset'],required=True);p.add_argument('--gpu-index',type=int,required=True);p.add_argument('--large-probe',action='store_true');a=p.parse_args()
+    assert not a.large_probe or a.method=='pool'
     signal.pthread_sigmask(signal.SIG_UNBLOCK,{signal.SIGTERM,signal.SIGINT})
     out=ROOT/'experiments/full2000_pretraining'/a.method;out.mkdir(parents=True,exist_ok=True)
     own=(out/'controller.lock').open('a');fcntl.flock(own,fcntl.LOCK_EX|fcntl.LOCK_NB)
@@ -22,7 +23,7 @@ def main():
     def memory_ready(stage):
         while True:
             free=int(subprocess.check_output(['nvidia-smi','-i',str(a.gpu_index),'--query-gpu=memory.free','--format=csv,noheader,nounits'],text=True).strip())
-            if free>=7168:return
+            if free>=(9216 if a.large_probe and name.endswith('_b2') else 7168):return
             status('waiting_memory',next_stage=stage,free_mib=free);time.sleep(15)
     env={**os.environ,'CUDA_VISIBLE_DEVICES':str(a.gpu_index),'OMP_NUM_THREADS':'2','MKL_NUM_THREADS':'2'}
     def run(stage,command):
@@ -35,14 +36,14 @@ def main():
     signal.signal(signal.SIGTERM,lambda n,f:sys.exit(128+n));signal.signal(signal.SIGINT,lambda n,f:sys.exit(128+n))
     try:
         batch=1
-        probe=ROOT/'experiments/scene_batch_probe'
+        probe=ROOT/'experiments'/('scene_batch_probe_large' if a.large_probe else 'scene_batch_probe')
         while True:
             if (probe/'comparison.json').exists():
                 comparison=json.loads((probe/'comparison.json').read_text())
                 for b in [1,2]:
                     record=json.loads((probe/f'batch{b}.json').read_text())
                     assert record['stage']=='passed' and record['actual_finite_updates']==3
-                if comparison['batch2_speed_ratio']>=1.1 and comparison['batch2_peak_mib']<=5800:batch=2
+                if comparison['batch2_speed_ratio']>=1.1 and comparison['batch2_peak_mib']<=(8192 if a.large_probe else 5800):batch=2
                 break
             if (probe/'status.json').exists():
                 record=json.loads((probe/'status.json').read_text())

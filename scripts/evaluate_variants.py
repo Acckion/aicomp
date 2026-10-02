@@ -1,5 +1,5 @@
 """Offline, single-checkpoint resolution/slicing/postprocessing experiments."""
-import argparse, json, sys, time, hashlib
+import argparse, json, sys, time, hashlib, importlib
 from pathlib import Path
 import numpy as np
 import torch
@@ -93,6 +93,9 @@ def windows(w,h,fraction):
 def main():
     ap=argparse.ArgumentParser();ap.add_argument('--checkpoint',required=True);ap.add_argument('--config',help='Model configuration for an architecture ablation');ap.add_argument('--size',type=int,default=640)
     ap.add_argument('--backend',choices=['dfine','deimv2'],default='dfine')
+    ap.add_argument('--amp',action='store_true',help='Use the same CUDA float16 inference precision as training validation')
+    ap.add_argument('--native-top100',action='store_true',help='Native single-view top100 before clipping; no refill from top300')
+    ap.add_argument('--require-ema',action='store_true',help='Reject weights without verified EMA metadata')
     ap.add_argument('--flip-tta',action='store_true');ap.add_argument('--expanded-soft',action='store_true');ap.add_argument('--tile',type=float,default=0);ap.add_argument('--output',required=True);ap.add_argument('--limit',type=int,default=0)
     ap.add_argument('--annotations',default=str(ROOT/'data/annotations/val400.json'))
     ap.add_argument('--image-root',default=str(ROOT/'data/train'))
@@ -109,6 +112,8 @@ def main():
         from engine.core import YAMLConfig as DEIMConfig
         ConfigType=DEIMConfig
     assert args.size % 32 == 0 and (args.tile == 0 or .5 <= args.tile < 1)
+    if args.native_top100:
+        assert args.tile==0 and not args.flip_tta and args.method=='none' and not args.expanded_soft
 
     torch.set_num_threads(2);torch.manual_seed(20260929)
     ann=Path(args.annotations); dataset=json.loads(ann.read_text()); images=dataset['images']
@@ -119,9 +124,18 @@ def main():
               'annotations_sha256':hashlib.sha256(ann.read_bytes()).hexdigest(),
               'image_root':str(Path(args.image_root).resolve()),'size':args.size,'tile':args.tile,'limit':args.limit}
     if args.flip_tta:identity['flip_tta']='horizontal_same_checkpoint_v1'
+    if args.amp:identity['precision']='cuda_float16_v1'
+    if args.native_top100:identity['candidate_selection']='native_top100_no_refill_v1'
+    if args.require_ema:identity['require_ema']=True
     if args.backend=='deimv2':identity['backend']='deimv2_imagenet_normalization_v1'
     if args.config:
         config = ConfigType(args.config)
+        mechanism_hashes={}
+        for name in config.yaml_cfg.get('mechanism_imports',[]):
+            module=importlib.import_module(name)
+            if getattr(module,'__file__',None):
+                mechanism_hashes[name]=hashlib.sha256(Path(module.__file__).read_bytes()).hexdigest()
+        if mechanism_hashes:identity['mechanism_source_sha256']=mechanism_hashes
         identity['resolved_model_config_sha256'] = hashlib.sha256(json.dumps(config.yaml_cfg,sort_keys=True,default=str).encode()).hexdigest()
     manifest=out/'cache_identity.json'
     if cache.exists():
@@ -133,12 +147,15 @@ def main():
         cfg=ConfigType(args.config or str(ROOT/'configs/rgb1600.yml'),eval_spatial_size=[args.size,args.size])
         model=cfg.model
         state=torch.load(args.checkpoint,map_location='cpu',weights_only=False)
+        if args.require_ema:
+            assert 'ema' in state or state.get('source')=='EMA', 'EMA source could not be verified'
         weights=state['ema']['module'] if 'ema' in state else state['model']
         # Spatial anchors are deterministic size-specific buffers, not learned weights.
         weights={k:v for k,v in weights.items() if k not in ('decoder.anchors','decoder.valid_mask')}
         missing,unexpected=model.load_state_dict(weights,strict=False)
         assert not unexpected and set(missing)<= {'decoder.anchors','decoder.valid_mask'},(missing,unexpected)
-        model.cuda().eval();post=cfg.postprocessor;post.num_top_queries=300
+        del state,weights
+        model.cuda().eval();post=cfg.postprocessor;post.num_top_queries=100 if args.native_top100 else 300
         preds={};reference={}
         with torch.inference_mode():
             for im in images:
@@ -152,7 +169,8 @@ def main():
                     if args.backend=='deimv2':tensor=TF.normalize(tensor,[.485,.456,.406],[.229,.224,.225])
                     for flipped in ([False,True] if args.flip_tta else [False]):
                         inp=tensor.flip(-1) if flipped else tensor
-                        p=post(model(inp),torch.tensor([[x2-x,y2-y]],device='cuda'))[0]
+                        with torch.autocast('cuda',dtype=torch.float16,enabled=args.amp):
+                            p=post(model(inp),torch.tensor([[x2-x,y2-y]],device='cuda'))[0]
                         if not args.tile and not args.flip_tta:
                             reference[str(im['id'])]={k:p[k].cpu().tolist() for k in ('boxes','scores','labels')}
                         b=p['boxes'].cpu()
@@ -204,7 +222,11 @@ def main():
             roundtrip=evaluate(gt,restored)
             row['txt_roundtrip_map']=roundtrip['map'];row['txt_roundtrip_delta']=roundtrip['map']-row['map']
             assert abs(row['txt_roundtrip_delta'])<.01,row
-    summary={'flip_tta':args.flip_tta,'size':args.size,'tile_fraction':args.tile,'checkpoint':args.checkpoint,'images':len(images),'inference_seconds':inference_seconds,'unclipped_reference':reference_result,'results':results,'note':'Independent val400; scores are not leaderboard results. Full-image/crops use the same checkpoint.'}
+    summary={'flip_tta':args.flip_tta,'size':args.size,'tile_fraction':args.tile,'checkpoint':args.checkpoint,
+             'annotations':str(ann),'dataset_total_images':len(dataset['images']),'images':len(images),
+             'limited_subset':bool(args.limit),'inference_seconds':inference_seconds,
+             'unclipped_reference':reference_result,'results':results,
+             'note':'Evaluation on supplied annotations; independence requires training provenance. These are not leaderboard scores. Views use the same checkpoint.'}
     (out/'results.json').write_text(json.dumps(summary,indent=2));(out/'COMPLETE').write_text('ok\n')
     print(json.dumps(summary),flush=True)
 

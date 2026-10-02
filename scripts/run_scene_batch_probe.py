@@ -12,9 +12,10 @@ ROOT=Path(__file__).resolve().parents[1]
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('--gpu-index',type=int,required=True);a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('--gpu-index',type=int,required=True);p.add_argument('--memory-limit-gib',type=float,default=6);p.add_argument('--output-name',choices=['scene_batch_probe','scene_batch_probe_large'],default='scene_batch_probe');a=p.parse_args()
+    assert 0<a.memory_limit_gib<=8.5
     signal.pthread_sigmask(signal.SIG_UNBLOCK,{signal.SIGTERM,signal.SIGINT})
-    out=ROOT/'experiments/scene_batch_probe';out.mkdir(parents=True,exist_ok=True)
+    out=ROOT/'experiments'/a.output_name;out.mkdir(parents=True,exist_ok=True)
     own=(out/'controller.lock').open('a');fcntl.flock(own,fcntl.LOCK_EX|fcntl.LOCK_NB)
     gpu=(ROOT/f'experiments/mechanism_trials/gpu{a.gpu_index}.lock').open('a');child=None
     def status(stage,**extra):
@@ -26,13 +27,13 @@ def main():
             except BlockingIOError:status('waiting_existing_task');time.sleep(15)
         while True:
             free=int(subprocess.check_output(['nvidia-smi','-i',str(a.gpu_index),'--query-gpu=memory.free','--format=csv,noheader,nounits'],text=True).strip())
-            if free>=7168:break
+            if free>=(9216 if a.memory_limit_gib>6 else 7168):break
             status('waiting_memory',free_mib=free);time.sleep(15)
         env={**os.environ,'CUDA_VISIBLE_DEVICES':str(a.gpu_index),'OMP_NUM_THREADS':'2','MKL_NUM_THREADS':'2'}
         results={}
         for batch in [1,2]:
             with (out/f'batch{batch}.log').open('ab') as log:
-                child=subprocess.Popen([sys.executable,'-u',str(ROOT/'scripts/benchmark_scene_batch.py'),'--batch-size',str(batch)],cwd=ROOT,env=env,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
+                child=subprocess.Popen([sys.executable,'-u',str(ROOT/'scripts/benchmark_scene_batch.py'),'--batch-size',str(batch),'--memory-limit-gib',str(a.memory_limit_gib),'--output-name',a.output_name],cwd=ROOT,env=env,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
             status('probing',batch_size=batch,worker_pid=child.pid)
             code=child.wait()
             if code:

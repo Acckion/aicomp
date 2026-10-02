@@ -719,3 +719,17 @@ GPU8 pool首轮完整mAP36.9863、小目标10.2884；多个已覆盖源类别已
 分别GPU7物理0/1自己的任务锁；controller2921562(pool)/2921563(reset)已实际启动并在waiting_batch_probe阶段。等待已验证存活的batch probe2904637先完成，后者仍等待live native_grid1_control2789087锁；全量controller当前尚无GPU训练worker。batch2需3次有限真实更新、比batch1吞吐>=1.1x且峰值<=5800MiB，否则batch1。两者有效batch均8；full2000的独立最大992/EMA驻留/3更新/空GT/strict reload预检和smoke仍须通过才能正式训练，batch2在正式训练之前失败允许有日志回退batch1，不对失败正式训练盲目重启。6GiB硬cap、每阶段起步空余7GiB、不停止其他任务。
 
 4份静态配置（两方法×microbatch1/2）已通过实际YAML继承解析、100epochs/validate=false/有效batch8、输出名与config名一致、2000图数量及全部文件存在检查。preflight增加全量模式：train IDs严格等于影子train+val的官方2000全集；没有独立heldout、group_disjoint记null，结束有限输出检查使用训练图800，不创建或报告验证AP。输出4个独立run均经GPU6 durable storage/full2000_pretrain/runs保存，避免根盘不足。全量loss/分类/框/GIoU/FGL/LR曲线monitoring/scene_rgb/full2000.png每60秒更新，明确NO independent AP。尚未声称batch2、全量预检、正式训练或线上57已达成。
+
+
+## 2026-10-03 02:03：49.136反馈后的筛选修正与运行核实
+
+本次IR1600 gateoff官方49.136，比当前最好RGB2000 flip+SoftNMS49.986低0.850，比IR2000 native49.752低0.616。同路径旧val40055.457并不能预测phase2；不同样本量、起点和推理路径，不能把分差单独归因于红外。固定score>=.25、IoU>=.5旧验证诊断，正确匹配2716→2725，仅+9；背景相似候选子集762→769贡献+7，没有检测到背景关联子集1954→1956仅+2。阈值统计不是AP，未检测到关联不等于真正独立场景；这只是验证迁移风险证据，不证明线上下降的具体类别原因。test无GT，新增垃圾桶等预测不能直接定性误检。
+
+全量reset控制controller2921563/worker2936299正式在GPU7物理1训练，日志有真实OPTIMIZER_PROGRESS，第一轮500/2000批已完成、finite loss、peakallocated3683MiB；尚无完整epoch或独立AP。原6GiB批2探针失败在Torch硬cap（5.93GiB allocated，物理仍4.96GiB free），不是用户约10GiB预算下必然无法使用批2。核实旧pool controller2921562只waiting_existing_task、无worker后，仅替换该等待进程。新8.5GiB探针controller2943910等待GPU0原native_grid1自己的锁；fullpool controller2943911等待探针，尚未正式训练。保留有效batch8，批2需3次有限更新、吞吐>=1.1x、peak<=8192MiB，完整预检/smoke仍必需；不动reset或其他健康训练。
+
+新taxonomy推理加载配置mechanism_imports，提供与验证相同AMP/原生Top100/强制EMA参数，cache identity含这些选项和机制源码SHA。16张分组val子集旧版本原生/坐标裁剪/TXT往返AP28.27716269且delta0，只证明该小子集转换一致，非整套无损证明、非最终AP、没有生成phase2包。taxonomy persisted类别组加载加保护，CPU正确回载和变更组拒绝检查通过。报告改为真实annotation路径与limit，避免小子集被误标独立val400。新增脚本均py_compile通过。
+
+新分组监控02:01:36：semantic继承第3轮38.807、同设备随机reset第3轮25.532；Obj365-only reset第6轮44.790，pool第2轮43.286。都不是phase2成绩；尚不足同epoch预热后三轮证据，不按不同训练年龄峰值选包。当前官方最好仍49.986，57目标未达到。
+
+
+02:05增补：GPU7物理7旧native_grid2_control完成8轮，原controller2787267/worker2789092已不存在，自己的gpu7锁实测可用、free9511MiB。仅停止仍无worker的等待探针2943910/fullpool2943911（身份和stage核实），转卡7后新controller2945929/2945930；探针worker2945936已真实probing batch1，fullpool仍等待probe，非正式训练。semantic正式第4轮800/1610、全量reset第1轮800/2000均有100个真实optimizer更新、有限loss，GPU6/GPU8三个影子worker存活。不同年龄AP不作为收益排名。

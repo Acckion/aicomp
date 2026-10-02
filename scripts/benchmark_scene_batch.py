@@ -15,11 +15,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('--batch-size',type=int,choices=[1,2],required=True);a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('--batch-size',type=int,choices=[1,2],required=True);p.add_argument('--memory-limit-gib',type=float,default=6);p.add_argument('--output-name',choices=['scene_batch_probe','scene_batch_probe_large'],default='scene_batch_probe');a=p.parse_args()
+    assert 0<a.memory_limit_gib<=8.5
     torch.set_num_threads(2);torch.manual_seed(20260929)
     torch.backends.cuda.matmul.allow_tf32=True;torch.backends.cudnn.allow_tf32=True
-    torch.cuda.set_per_process_memory_fraction(6*1024**3/torch.cuda.get_device_properties(0).total_memory)
-    out=ROOT/'experiments/scene_batch_probe';out.mkdir(parents=True,exist_ok=True)
+    torch.cuda.set_per_process_memory_fraction(a.memory_limit_gib*1024**3/torch.cuda.get_device_properties(0).total_memory)
+    out=ROOT/'experiments'/a.output_name;out.mkdir(parents=True,exist_ok=True)
     cfg=YAMLConfig(str(ROOT/'configs/scene_obj365_pool800.yml'),output_dir=str(out))
     cfg.tuning=str(ROOT/'checkpoints/dfine_x_obj365.pth')
     install_training_controls(baseline)
@@ -53,6 +54,7 @@ def main():
         records.append(record);print(json.dumps(record),flush=True)
     assert len(updates)==3;hook.remove()
     result={'stage':'passed','batch_size':a.batch_size,'accumulation':8//a.batch_size,'maximum_scale':992,
+            'memory_limit_gib':a.memory_limit_gib,
             'ema_resident':True,'actual_finite_updates':len(updates),'peak_allocated_mib':torch.cuda.max_memory_allocated()/1024**2,
             'images_per_second_last_two_updates':16/sum(r['seconds_for_effective_batch8'] for r in records[-2:]),'records':records,
             'limitations':'Fixed train examples, shared GPU speed snapshot; not AP or full-run stability. No existing training interrupted.'}

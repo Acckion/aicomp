@@ -60,6 +60,18 @@ class TaxonomyScoreHead(nn.Module):
         pooled = torch.where(self.group_valid.any(-1), pooled, torch.zeros_like(pooled))
         return pooled + self.residual(x)
 
+    def _load_from_state_dict(self, state_dict, prefix, local_metadata, strict,
+                              missing_keys, unexpected_keys, error_msgs):
+        # The non-persistent gather indices must agree with the checkpoint's
+        # persisted category rows. Otherwise strict=False can silently load
+        # old rows while keeping a newly edited aggregation definition.
+        for target, ids in GROUPS.items():
+            key = prefix+'rows_'+str(target)
+            if key in state_dict and not torch.equal(state_dict[key].detach().cpu(), torch.tensor(ids,dtype=torch.long)):
+                error_msgs.append('Taxonomy definition disagrees with checkpoint: '+key)
+        super()._load_from_state_dict(state_dict,prefix,local_metadata,strict,
+                                     missing_keys,unexpected_keys,error_msgs)
+
 
 _init = DFINETransformer.__init__
 def initialize(self, *args, **kwargs):
