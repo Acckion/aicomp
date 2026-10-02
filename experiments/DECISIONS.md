@@ -775,3 +775,10 @@ native_grid1真COMPLETE8轮，末轮53.8939低于独立control末轮54.4882；�
 run_full2000_pretraining增加coco_semantic方法分支，source明确dfine_x_obj2coco.pth而非Objects365-only，输出名full2000_semantic_init800(_b2)、shadow关联正确。全量2000图/100轮/validate=false/有效batch8/冻结BN/EMA/同增广调度；B2 cap8.5GiB、起步free>=9GiB，B1预正式失败回退仍可用。两个静态配置均实际YAML解析semantic_row_init true/12类/100epochs/2000数量/有效batch8/本机summary正确。持久输出GPU6 remote storage；没有外部训练图片或使用test标签。
 
 最大992/EMA/空GT/strict reload/3次实际更新预检通过peak5932.93MiB，完整smoke通过peak5954.65MiB。controller3001176/正式worker3002235在GPU7物理0，真实3次finite更新、next_batch12、peak5957.24MiB，verified_launch.json存证。新增两full名字的preflight注册与分支源选择均真实执行，不只编译。原5条影子和2条全量继续。监控脚本支持第三全量分支；仅核实身份替换绘图进程，monitor3002145每60秒，03:02:20实际更新，没改训练进程；新路线首个完整epoch前无假造loss点或AP。
+
+
+## 2026-10-03：源分类知识漂移CPU诊断实际完成
+
+新增audit_taxonomy_head_drift仅CPU/2线程、0图/0标签/0优化，GPU8本机读取公开Objects365源与immutable epoch1 full，以及先hardlink固定的当前epoch7完整EMA。7个源分类头均检查366x256，提取小的源权重/残差后释放完整checkpoint。报告已同步本机experiments/taxonomy_head_drift/report.json；current_full.pth hardlink留GPU8，不占本机根盘，也不改变训练状态或使用heldout标签。
+
+截至epoch7，encoder映射行cosine.999535/L2相对变化3.0388%，末decoder.999348/3.2933%；未用源行cosine1/L2约.0073%。已知目标残差RMS encoder从epoch1 .001634到.011422，末decoder.001470到.007276。是参数描述，不能证明功能知识保持/遗忘：特征及残差同时训练，置信度排序还会改变。未见大幅源分类权重漂移，因此不据epoch6 AP暂降就追加冻结源头实验，保持既定对照继续。源权重初值对应与形状断言、完整元数据记录、实际CPU执行及py_compile都通过；不将此诊断当AP或phase2改善证据。
