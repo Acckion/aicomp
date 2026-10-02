@@ -501,3 +501,12 @@ GroundingDINO实施成本判断修正：原作者仓库training TODO不代表没
 CPU检查通过：四份配置解析、定额选择不重复及不足64候选情形、零投影完全恒等、无有效IR恒等、门控有限非零梯度。真实最大尺度多步反传、空GT、EMA钩子归属和严格回载尚未执行，已作为队列正式训练前不可跳过的检查；不能将排队称为开训。
 
 GroundingDINO可靠对象蒸馏仅准备判断流程，不自动全面蒸馏：待完整12轮后，对统一val400候选作同类一对一IoU.75/.9覆盖、分类混淆和小目标分层。若存在稳定独有能力，再在train1600独立生成教师预测并以真实GT核实对象；val400独有目标ID永不进入训练筛选。当前未实现或启动该蒸馏，避免重复此前末层CLIP全局语义监督的负结果。HTI现有队列不修改。
+
+## 2026-10-02：按用户授权迁移后续队列至GPU8
+
+GPU8 222.20.97.217 SSH已成功，卡4剩余约18.1GiB、卡2约9.8GiB，均共享其他人的任务，不停止它们。远端/home/fbohan/AIC独立代码、/home/fbohan/miniconda3/envs/AICOMP由现有Miniconda环境conda-pack还原，2000张官方RGB、仅IR原始图构成的archive、train1600/val400、父权重与IR teacher复制远端本地；不搬depth或phase2。GPU7通过checkpoints/gpu8_storage SSHFS挂载远端项目读取输出，GPU8训练不通过该挂载读取自己的数据。输入清单保存2000张RGB与环境/IR archive/权重/划分SHA256，远端校验通过才写VALIDATED，自动GPU真实预检仍不可跳过。GPU8部署将IR archive路径指向migration/AICOMP_IR_2000.zip，ROI预检临时checkpoint路径改为checkpoints/remote_preflight；其余训练配方保持相同。
+
+- ir_reliability800→paired/shuffled/zero/gate-off消融→ir_reliability_control800，远端物理GPU4，各训练8轮。GPU7原IR等待队列已停止，不会重复派发。待GPU7当前IR-content RGB对照完整结束，publisher写远端ir.ready.json才开训。
+- 局部覆盖roi_coverage800在迁移核实时已自动开训，因此保留该GPU7 GPU1活跃worker，不重复重训。只暂停它的旧controller后续派发，roi_coverage_control800八轮改在GPU8物理GPU2。publisher看到活跃训练COMPLETE后，对经过UID/cmd核验的暂停controller先挂起TERM再CONT，避免旧队列重复启动control；此后写远端roi.ready.json。EMA inference权重不能恢复当前优化器，因此不把中途迁移称为等价续训。
+
+run_gpu8_successors.py两个远端持久controller已启动（当前等待setup/前置任务，不称为实际训练）；finish_gpu8_migration.py后台监督复制和最终校验，失败不放行；publish_gpu8_prerequisites.py独立发布完成前提。输出仍各8.5GiB硬上限，GPU8显存不足时等待。GPU7本轮Grounding、HTI、IR对照和局部覆盖继续运行。三个远端run通过GPU7 runs同名符号链接进入原每60秒监控；旧GPU6空ROI control链接改名保存，未删数据。
