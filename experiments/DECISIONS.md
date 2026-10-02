@@ -747,3 +747,15 @@ GPU8 pool首轮完整mAP36.9863、小目标10.2884；多个已覆盖源类别已
 ## 2026-10-03 02:26：完整390图提交转换审计已排队
 
 新增watch_scene_submission_audit，固定scene_obj365_pool800第10轮EMA权重，等待完整epoch10 metrics和atomic weights落盘后才启动；不按峰值挑轮。以800/AMP/原生Top100/无NMS/无TTA在本机GPU7物理4自己的锁执行完整390图，2GiB硬cap、起步free>=3GiB，与源训练评测AP比较，再分别报告clip和TXT往返影响、要求390个唯一TXT。route_consistent要求native vs training及clip差<.05、TXT roundtrip差<.01；超出即标route_mismatch，不宣称模型收益。只用新heldout验证，不产生phase2预测/ZIP，不占提交机会。数据1610/390及ID不重合/filename stem唯一均由实际watcher启动检查通过，py_compile通过。首个pending watcher核实无worker后更新了clip一致性判定并替换；最终controller 2967970 正在waiting_checkpoint，源任务现完成3轮，审计尚未执行。
+
+
+## 2026-10-03 02:30：全量reset批量加速迁移请求已发出
+
+全量reset正式第一轮完成、第二轮已有finite更新；GPU7物理1原worker2936299身份核实后发SIGUSR1，监督2972293等待完整migration和worker退出，再恢复为full2000_obj365_reset800_b2。两配置有效batch8，B1累积8/B2累积4、steps/epoch均250，因此不rebalance LR，完整model/EMA/optimizer/scaler/schedule/RNG恢复；unfinished epoch重播且新的microbatch改变组合，不声称位级等价。
+
+B2 Torch上限8.5GiB、启动free>=9GiB；必须新跑reset B2最大992/EMA/3 finite update/strict reload preflight及完整smoke，失败只在正式训练之前尝试B1恢复原迁移状态，正式失败不自动重启。两reset配置日志转本机local_summary，完整checkpoint仍durable GPU6。YAML实际解析两者100轮、validate=false、有效batch8及summary_dir正确、py_compile通过。此时旧状态正在保存，不能称B2已正式运行。run_full2000_pretraining新增resume时缺少既有预检必须补齐和smoke；只有本次worker生成迁移标记才能识别正常迁移退出。
+
+
+02:39恢复增补：原全量reset完整migration保存1003557166 bytes。初始恢复controller2973849仅CPU读取、尚无child、status仍旧controller终态；远端FUSE零散读取一分钟仅约几十MiB，核实身份和无child后只停止该reader。经SCP顺序复制完整文件到/dev/shm/aicomp_reset_migration_20261003.pth，远端/本地SHA256一致d3ad44bd551d9f4e0558fb37ada6ae0bb6be1c39825ab504d6f740b5678807fa。远端原件保留，本机只是加载缓存。新controller2978608物理1开始补充预检，B2最大992/EMA/3次真实更新/空GT/strict reload实际passed peak5932.93MiB；完整smoke也passed peak5954.65MiB，尚待正式恢复新worker实际更新核实。local_resume_copy.json保存大小/hash/持久源路径。
+
+02:40实际恢复核实：controller2978608/worker2980465在GPU7物理1使用full2000_obj365_reset800_b2正式--resume本机完整缓存。第2轮已有3次finite实际更新、LR主组0.00010067、peak5987.66MiB，不是预检更新。原完成epoch1继承，新run保存resume_lineage，不能将B1与B2算作两组独立全量实验。预检和smoke都已通过，正式整轮速度仍待确认。

@@ -4,3 +4,5 @@ validate: false
 train_dataloader:
   dataset:
     ann_file: /home/fbohan/AIC/data/annotations/train2000.json
+
+summary_dir: /home/fbohan/AIC/experiments/full2000_pretraining/reset/local_summary

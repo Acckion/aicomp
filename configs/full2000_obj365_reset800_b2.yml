@@ -3,3 +3,6 @@ output_dir: /home/fbohan/AIC/runs/full2000_obj365_reset800_b2
 gradient_accumulation_steps: 4
 train_dataloader:
   total_batch_size: 2
+
+summary_dir: /home/fbohan/AIC/experiments/full2000_pretraining/reset/local_summary
+gpu_memory_limit_gib: 8.5

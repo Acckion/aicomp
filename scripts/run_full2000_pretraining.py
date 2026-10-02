@@ -30,7 +30,7 @@ def main():
     def memory_ready(stage):
         while True:
             free=int(subprocess.check_output(['nvidia-smi','-i',str(a.gpu_index),'--query-gpu=memory.free','--format=csv,noheader,nounits'],text=True).strip())
-            if free>=(9216 if a.large_probe and name.endswith('_b2') else 7168):return
+            if free>=(9216 if name.endswith('_b2') else 7168):return
             status('waiting_memory',next_stage=stage,free_mib=free);time.sleep(15)
     env={**os.environ,'CUDA_VISIBLE_DEVICES':str(a.gpu_index),'OMP_NUM_THREADS':'2','MKL_NUM_THREADS':'2'}
     def run(stage,command):
@@ -62,7 +62,7 @@ def main():
         while True:
             try:fcntl.flock(gpu,fcntl.LOCK_EX|fcntl.LOCK_NB);break
             except BlockingIOError:status('waiting_existing_task');time.sleep(15)
-        for selected in ([batch] if a.resume else ([2,1] if batch==2 else [1])):
+        for selected in ([2,1] if batch==2 else [1]):
             name=f'full2000_obj365_{a.method}800'+('_b2' if selected==2 else '')
             output=ROOT/'runs'/name
             assert not (output/'COMPLETE').exists()
@@ -77,7 +77,17 @@ def main():
             (output/'selection_policy.json').write_text(json.dumps(policy,indent=2))
             config=ROOT/'configs'/(name+'.yml')
             if a.resume:
-                result=json.loads((ROOT/'experiments/scene_semantic_init'/name/'preflight.json').read_text())
+                preflight=ROOT/'experiments/scene_semantic_init'/name/'preflight.json'
+                if not preflight.exists():
+                    code=run('resume_preflight_b'+str(selected),[str(ROOT/'scripts/scene_semantic_preflight.py'),'--name',name])
+                    if code:
+                        if selected==2:continue
+                        raise RuntimeError('Resume batch1 preflight failed')
+                    smoke=[str(ROOT/'scripts/train_ir_content.py'),'--config',str(config),'--init-checkpoint',str(ROOT/'checkpoints/dfine_x_obj365.pth'),'--smoke']
+                    if run('resume_smoke_b'+str(selected),smoke):
+                        if selected==2:continue
+                        raise RuntimeError('Resume batch1 smoke failed')
+                result=json.loads(preflight.read_text())
                 assert result['stage']=='passed' and result['training_images']==2000 and result['validation_disabled']
                 command=[str(ROOT/'scripts/train_ir_content.py'),'--config',str(config),'--resume',str(Path(a.resume).resolve())]
                 if run('training',command):raise RuntimeError('Resumed full-data training failed; no automatic restart')
