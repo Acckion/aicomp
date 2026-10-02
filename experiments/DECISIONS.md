@@ -699,3 +699,14 @@ GPU8 ir_corr主/control完整8轮已结束，最高55.1338/55.1866，主整体AP
 scene_obj365_pool800与已运行scene_obj365_reset800同源权重/seed/1610train390val/100轮/有效batch8，GPU8物理4独占自己的任务锁、启动空余>=7GiB、Torch6GiB上限。controller2731711/正式worker2740175已真实启动，已至少1次有限实际更新；最大992/EMA驻留/3更新/空GT/strict reload预检通过，source与target residual分类头梯度在前两步都有限非零，peak3681.06MiB。真实完整smoke峰值5870.56MiB、通过；不能用较低预检峰值代替完整runner峰值。后续5组分组训练图每60秒更新。加载同时支持公开366分类权重和同结构成熟训练权重，后者严格核对taxonomy buffers；不将初始化的聚合恒等检查套到已训练残差上。
 
 COCO行继承scene_semantic_init800首轮mAP21.281，随机重置scene_rgb_fastcontrol800首轮.546（GPU6同重置约.686）。这只显示预训练分类知识加快早期恢复；两者尚在3轮warmup中，不能声称最终提升21分、跨场景泛化已改善或线上57已达成。
+
+
+## 2026-10-03：分组训练的分类别监控与计算提速
+
+plot_scene_training新增12类AP@50-95图monitoring/scene_rgb/per_class.png及evidence.json，每60秒真实更新，列GT数量/预热阶段/完整epoch/按已完成轮次估计ETA。3组方法比较只使用相同epoch、预热3轮后的最近3个匹配轮次；当前尚不足，不按不同训练年龄的峰值排序、不自动推荐提交。三轮车新val仅5个GT明确标稀疏。图已实际生成并目视核查。
+
+新benchmark_scene_batch.py在最大992、EMA驻留、3个真实有效batch8更新下比较batch1累积8与batch2累积4（固定同两张增强train样本，末次含空GT、梯度有限），无模型checkpoint产物。run_scene_batch_probe controller2904637在GPU7卡1等待原native_grid1_control自己的gpu1锁，confirmed PID存活、原worker2789087也存活；未停止原任务，也未声称batch2已通过。新试验6GiB硬cap/启动空余7GiB，测试仅决定后续吞吐选择，不能替代整轮稳定性。
+
+taxonomy_pooling分类汇总由每大类单独index_select/max改为统一gather/mask/max，源权重、类别定义、目标残差与persistent state keys不变；新索引/mask仅是由已检查GROUPS推导的non-persistent buffer。CPU float64随机非零损失权重检查输出精确相等、全部参数和输入梯度1e-12一致；GPU7卡4自己的锁、512MiB上限独立小探针（peak183.48MiB）在最大992对应20181 memory token与300decoder token检查FP16输出精确相等、参数及输入梯度1e-4一致。分类头独立fwd/bwd循环快1.7575x/3.1273x，包含同步和检查开销，不能外推整轮同比提速。
+
+GPU8 pool首轮完整mAP36.9863、小目标10.2884；多个已覆盖源类别已有AP，但UAV仅4.0594、tricycle41.8164基于5GT不可稳定解释。此为公开预训练知识的早期恢复，不是比赛最佳或57证据。CPU严格回载首轮完整model/EMA/optimizer/scaler/schedule/RNG检查且7个成熟分类头的新/旧forward精确相等后，保留968MiB完整hardlink last_before_vectorization.pth。只停止验证身份的旧controller2731711/worker2740175；从该完整epoch1检查点恢复新controller2984138/worker2984158，原batch1/累积8/学习率进度和100轮预算不变。unfinished epoch2少量更新从epoch1边界重播，已完成metrics不删除；旧audit200是更新100间隔写的下界，checkpoint schedule_step_index=202。vectorization_resume.json保存完整证据，不能把新worker审计计数重置称为从头重训。

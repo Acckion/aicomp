@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('--name',choices=['scene_semantic_init800','scene_rgb_fastcontrol800','scene_obj365_reset800','scene_obj365_pool800'],required=True);p.add_argument('--gpu-index',type=int,required=True);args=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('--name',choices=['scene_semantic_init800','scene_rgb_fastcontrol800','scene_obj365_reset800','scene_obj365_pool800'],required=True);p.add_argument('--gpu-index',type=int,required=True);p.add_argument('--resume');args=p.parse_args()
     OUT=ROOT/'experiments/scene_semantic_init'/args.name;OUT.mkdir(parents=True,exist_ok=True)
     signal.pthread_sigmask(signal.SIG_UNBLOCK, {signal.SIGTERM, signal.SIGINT})
     lock = (ROOT/f'experiments/mechanism_trials/gpu{args.gpu_index}.lock').open('a')
@@ -44,12 +44,17 @@ def main():
     signal.signal(signal.SIGINT, lambda n,f:sys.exit(128+n))
     try:
         assert not (ROOT / 'runs' / args.name / 'COMPLETE').exists()
-        run('preflight', [str(ROOT/'scripts/scene_semantic_preflight.py'),'--name',args.name])
-        assert json.loads((OUT/'preflight.json').read_text())['actual_updates'] == 3
         command = [str(ROOT/'scripts/train_ir_content.py'),'--config',str(ROOT/'configs'/(args.name+'.yml'))]
-        if args.name.startswith('scene_obj365_'):
-            command += ['--init-checkpoint',str(ROOT/'checkpoints/dfine_x_obj365.pth')]
-        run('smoke', command + ['--smoke'])
+        if args.resume:
+            assert Path(args.resume).is_file()
+            assert json.loads((OUT/'preflight.json').read_text())['actual_updates'] == 3
+            command += ['--resume',args.resume]
+        else:
+            run('preflight', [str(ROOT/'scripts/scene_semantic_preflight.py'),'--name',args.name])
+            assert json.loads((OUT/'preflight.json').read_text())['actual_updates'] == 3
+            if args.name.startswith('scene_obj365_'):
+                command += ['--init-checkpoint',str(ROOT/'checkpoints/dfine_x_obj365.pth')]
+            run('smoke', command + ['--smoke'])
         run('training', command)
         assert (ROOT/'runs'/args.name/'COMPLETE').exists()
         status('complete')

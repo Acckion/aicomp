@@ -40,14 +40,25 @@ class TaxonomyScoreHead(nn.Module):
                 self.residual.bias[target].zero_()
         for target, ids in GROUPS.items():
             self.register_buffer('rows_'+str(target), torch.tensor(ids, dtype=torch.long))
+        width = max(map(len, GROUPS.values()))
+        indices = torch.zeros((12, width), dtype=torch.long)
+        valid = torch.zeros((12, width), dtype=torch.bool)
+        for target, ids in GROUPS.items():
+            indices[target, :len(ids)] = torch.tensor(ids)
+            valid[target, :len(ids)] = True
+        # Derived buffers are recreated from the checked taxonomy, so old
+        # training checkpoints retain exactly the same persistent state keys.
+        self.register_buffer('group_indices', indices, persistent=False)
+        self.register_buffer('group_valid', valid, persistent=False)
 
     def forward(self, x):
         prior = self.source(x)
         # Max preserves the highest matching subtype's pretrained logit.
         # Averaging animal or light rows can cancel mutually distinct evidence.
-        columns = [prior.index_select(-1, getattr(self, 'rows_'+str(c))).amax(-1)
-                   if c in GROUPS else torch.zeros_like(prior[..., 0]) for c in range(12)]
-        return torch.stack(columns, -1) + self.residual(x)
+        grouped = prior[..., self.group_indices]
+        pooled = torch.where(self.group_valid, grouped, -torch.inf).amax(-1)
+        pooled = torch.where(self.group_valid.any(-1), pooled, torch.zeros_like(pooled))
+        return pooled + self.residual(x)
 
 
 _init = DFINETransformer.__init__
