@@ -742,3 +742,8 @@ GPU8 pool首轮完整mAP36.9863、小目标10.2884；多个已覆盖源类别已
 核实身份后向2949694发送SIGUSR1，在optimizer边界完整保存migration.pth 1014169358 bytes/MIGRATION_READY。原controller2945930因未COMPLETE留下AssertionError terminal，属于主动迁移退出，不是数值错误；新controller增加显式full-state resume及识别本次worker新生成迁移标记，不能用旧标记遮掩意外退出。运行中的旧controller代码不会动态更新。监督进程2955303只在marker存在、旧worker终止且旧controller锁释放后启动resume controller2956636/worker2958114，同GPU7物理7，严格完整状态加载。
 
 02:19实际新worker3次finite更新，next_batch12、loss35.7587、LR1.2667e-5（主组）已接续而非reset到零；旧epoch未完成，约140个microbatch从边界重播，非位级相同训练。io_resume_verified.json保存真实cmdline和新时间戳，不把旧审计文件当恢复证明。local_summary实际文件存在。正式速度须看完整轮次，暂不保证短测2倍。完整检查点仍远端durable保存；未迁移或停止任何其他用户任务，其他影子和全量reset继续。summary_dir配置解析、有效batch8/100epoch验证、py_compile通过。线上最好仍49.986，目标57未实现。
+
+
+## 2026-10-03 02:26：完整390图提交转换审计已排队
+
+新增watch_scene_submission_audit，固定scene_obj365_pool800第10轮EMA权重，等待完整epoch10 metrics和atomic weights落盘后才启动；不按峰值挑轮。以800/AMP/原生Top100/无NMS/无TTA在本机GPU7物理4自己的锁执行完整390图，2GiB硬cap、起步free>=3GiB，与源训练评测AP比较，再分别报告clip和TXT往返影响、要求390个唯一TXT。route_consistent要求native vs training及clip差<.05、TXT roundtrip差<.01；超出即标route_mismatch，不宣称模型收益。只用新heldout验证，不产生phase2预测/ZIP，不占提交机会。数据1610/390及ID不重合/filename stem唯一均由实际watcher启动检查通过，py_compile通过。首个pending watcher核实无worker后更新了clip一致性判定并替换；最终controller 2967970 正在waiting_checkpoint，源任务现完成3轮，审计尚未执行。
