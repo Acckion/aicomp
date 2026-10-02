@@ -759,3 +759,10 @@ B2 Torch上限8.5GiB、启动free>=9GiB；必须新跑reset B2最大992/EMA/3 fi
 02:39恢复增补：原全量reset完整migration保存1003557166 bytes。初始恢复controller2973849仅CPU读取、尚无child、status仍旧controller终态；远端FUSE零散读取一分钟仅约几十MiB，核实身份和无child后只停止该reader。经SCP顺序复制完整文件到/dev/shm/aicomp_reset_migration_20261003.pth，远端/本地SHA256一致d3ad44bd551d9f4e0558fb37ada6ae0bb6be1c39825ab504d6f740b5678807fa。远端原件保留，本机只是加载缓存。新controller2978608物理1开始补充预检，B2最大992/EMA/3次真实更新/空GT/strict reload实际passed peak5932.93MiB；完整smoke也passed peak5954.65MiB，尚待正式恢复新worker实际更新核实。local_resume_copy.json保存大小/hash/持久源路径。
 
 02:40实际恢复核实：controller2978608/worker2980465在GPU7物理1使用full2000_obj365_reset800_b2正式--resume本机完整缓存。第2轮已有3次finite实际更新、LR主组0.00010067、peak5987.66MiB，不是预检更新。原完成epoch1继承，新run保存resume_lineage，不能将B1与B2算作两组独立全量实验。预检和smoke都已通过，正式整轮速度仍待确认。
+
+
+## 2026-10-03 02:53：第40轮全量候选出包管线已排队
+
+watch_taxonomy_phase2_candidate固定full2000_obj365_pool800_b2第40轮，先要求shadow第10轮完整390图route_consistent，再等待full epoch40完整metrics/compact EMA落盘，并读取pool/reset最近3个共同预热后epoch：整体平均delta>=.5、排除仅5GT tricycle后的11类平均delta>0才准备包。证据不足等待、否定结果rejected，不将准备管线等同方法已有效。原官方macro12类仍主指标；排除tricycle只防稀疏类驱动筛选。3轮窗口尚不足的实际evidence函数检查返回None，不能提前选择；读取JSONL只使用已完整newline记录，避免采到正在追加的半行。
+
+推理仅RGB phase2官方1000图、800/AMP/原生Top100/EMA/无TTA无NMS，自己的GPU4锁与free>=3GiB/Torch2GiB cap，不抢训练锁。原生配置机制自动注册且已小子集检查，最终仍须390图路线检查先通过。包必须1000个正确唯一TXT名称/CRC通过/metadata1000、native100/AMP、leaderboard_score null。无自动提交、无57保证，候选准备后仍应复核当时影子趋势和官方反馈。首次pending watcher在完善不足窗口等待后核实无GPUworker并替换，最终controller2994438，数据1000test/2000train与全部test文件存在断言已由实际启动执行。
