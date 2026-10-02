@@ -13,7 +13,7 @@ OUT.mkdir(parents=True, exist_ok=True)
 
 def draw():
     fig, axes = plt.subplots(2, 3, figsize=(15, 8))
-    for name in ['scene_rgb800', 'scene_rgb_fastcontrol800', 'scene_semantic_init800', 'scene_obj365_reset800']:
+    for name in ['scene_rgb800', 'scene_rgb_fastcontrol800', 'scene_semantic_init800', 'scene_obj365_reset800', 'scene_obj365_pool800']:
         path = ROOT / 'runs' / name / 'metrics.jsonl'
         rows = []
         if path.exists():

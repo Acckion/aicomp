@@ -686,3 +686,16 @@ scene_semantic_init800与scene_rgb_fastcontrol800同一1610/390背景分组、�
 核对官方D-FINE Model Zoo：https://github.com/Peterande/D-FINE，Objects365-only与当前Obj365→COCO公开权重不同。实际下载官方dfine_x_obj365.pth到GPU6持久storage，再同步GPU8，254464712 bytes、SHA256 a3e3177e67fecf958d77599482730aaeb2700794b79a9cdd269470bdd8cb14eb。CPU逐tensor比较同keys，只有score_head类别366 vs80与DN367 vs81形状不同，非分类层形状完全匹配，实际hidden_dim256。Objects365官方配置不remap且num_classes366，不能猜测0/1-based类别或随意继承365类行。
 
 scene_obj365_reset800独立复用scene_rgb800配方/seed/1610train390val/100轮，只将公开初始化改为Objects365-only，12类头按原loader重置；与scene_rgb_fastcontrol800形成来源对照，不增加外部训练图像。GPU8物理卡2自己的锁可用且空余8551MiB，6GiB硬cap，全部2000图存在和权重SHA远端验证通过。最大992/EMA驻留/3次有限真实更新/空GT/严格回载预检通过，峰值3656.24MiB；smoke通过。controller2585343/正式worker2592983已进入训练阶段，后续审计实际步数；不把预检更新冒充正式训练更新。输出GPU8本地runs并经现有FUSE映射监控，四组分组训练图60秒更新。官方预训练建议是待验证的来源选择依据，不证明比赛提升或57分。
+
+
+## 2026-10-03：预训练分类语义诊断与分类层级迁移实验
+
+GPU8 ir_corr主/control完整8轮已结束，最高55.1338/55.1866，主整体AP未胜过control；后3轮平均主55.0697/control55.0425、小目标主28.5455/control27.7009。小目标有限正向不证明线上整体收益，不推广全量对应路线。GPU8物理卡4已释放并确认原worker终止。
+
+新audit_obj365_class_rows只用scene_train中192图（每类最多10图加固定seed随机补齐）及自己的GT做whole800、公开Objects365-only 366类原生预测，heldout IDs严格排除，不裁剪、不优化。peak504.76MiB、45秒完成。最佳几何IoU>=.5的147个light中，最高source类别86个Street Lights raw12、49个Lamp raw7、5个Traffic Light raw41；animal的235个几何支持中111个Wild Bird raw57，其余是多个物种；垃圾桶36个GT中27个有Trash bin Can raw45的argmax候选IoU>=.5，三轮车13个中7个有Tricycle raw184的支持。不是AP、一对一召回或独立验证；用于确认可用的公开类别知识，而非调test预测。原始ID映射依据OpenMMLab fix_o365_names.py与zhiyuan_objv2_train_names_fix.csv，D-FINE remap=false直接使用raw category_id；1=Person，不可套用YOLO零起始编号。
+
+新taxonomy_pooling让已核实相关Objects365细分类别的最大logit对应11个比赛大类，再加可学习的12类残差；UAV缺少可靠对应，保留原随机目标行，不把airplane强当UAV。366源分类权重可学习、已知目标残差零初始化，encoder候选选择和6个decoder分类头都使用该结构；DN行采用对应细类embedding均值，类别迁移与DN迁移一起作为一条机制比较，不将收益唯一归因于max。保留HGNet/encoder/回归，仍一个检测器12类单一框输出，无外部图片、teacher推理或框投票。粗类别组仅作有声明的语义先验，不声称每个类别定义完全一致。类表核对发现草稿animal列表误将221洗衣机列为鸡，已在上传/任何预检之前改为正确raw222=Chicken；正式groups正确。
+
+scene_obj365_pool800与已运行scene_obj365_reset800同源权重/seed/1610train390val/100轮/有效batch8，GPU8物理4独占自己的任务锁、启动空余>=7GiB、Torch6GiB上限。controller2731711/正式worker2740175已真实启动，已至少1次有限实际更新；最大992/EMA驻留/3更新/空GT/strict reload预检通过，source与target residual分类头梯度在前两步都有限非零，peak3681.06MiB。真实完整smoke峰值5870.56MiB、通过；不能用较低预检峰值代替完整runner峰值。后续5组分组训练图每60秒更新。加载同时支持公开366分类权重和同结构成熟训练权重，后者严格核对taxonomy buffers；不将初始化的聚合恒等检查套到已训练残差上。
+
+COCO行继承scene_semantic_init800首轮mAP21.281，随机重置scene_rgb_fastcontrol800首轮.546（GPU6同重置约.686）。这只显示预训练分类知识加快早期恢复；两者尚在3轮warmup中，不能声称最终提升21分、跨场景泛化已改善或线上57已达成。

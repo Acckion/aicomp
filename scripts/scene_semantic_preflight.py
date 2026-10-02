@@ -15,12 +15,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('--name',choices=['scene_semantic_init800','scene_rgb_fastcontrol800','scene_obj365_reset800'],required=True);args=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('--name',choices=['scene_semantic_init800','scene_rgb_fastcontrol800','scene_obj365_reset800','scene_obj365_pool800'],required=True);args=p.parse_args()
     torch.set_num_threads(2)
     torch.manual_seed(20260929)
     torch.cuda.set_per_process_memory_fraction(6 * 1024**3 / torch.cuda.get_device_properties(0).total_memory)
     cfg = YAMLConfig(str(ROOT / 'configs' / (args.name+'.yml')))
-    source = 'dfine_x_obj365.pth' if args.name == 'scene_obj365_reset800' else 'dfine_x_obj2coco.pth'
+    if args.name == 'scene_obj365_pool800':
+        import taxonomy_pooling
+    source = 'dfine_x_obj365.pth' if args.name.startswith('scene_obj365_') else 'dfine_x_obj2coco.pth'
     cfg.tuning = str(ROOT / 'checkpoints' / source)
     install_training_controls(baseline)
     solver = baseline.BaselineSolver(cfg)
@@ -57,6 +59,10 @@ def main():
         grads = [p.grad for p in model.parameters() if p.grad is not None]
         assert grads and all(torch.isfinite(g).all() for g in grads)
         assert any(g.abs().sum() > 0 for g in grads)
+        if args.name == 'scene_obj365_pool800' and step < 2:
+            head = model.decoder.enc_score_head
+            assert head.source.weight.grad is not None and head.source.weight.grad.abs().sum() > 0
+            assert head.residual.weight.grad is not None and head.residual.weight.grad.abs().sum() > 0
         torch.nn.utils.clip_grad_norm_(model.parameters(), .1)
         scaler.step(optimizer)
         scaler.update()

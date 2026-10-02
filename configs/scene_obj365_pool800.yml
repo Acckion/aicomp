@@ -1,0 +1,3 @@
+__include__: ['./scene_rgb800.yml']
+output_dir: /home/fbohan/AIC/runs/scene_obj365_pool800
+mechanism_imports: [extra_iou_metrics, taxonomy_pooling]
