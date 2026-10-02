@@ -106,9 +106,10 @@ def draw():
     tmp=OUT/f'per_class.{os.getpid()}.png';fig.savefig(tmp,dpi=130);plt.close(fig)
     tmp.replace(OUT/'per_class.png')
     fig, axes = plt.subplots(2,3,figsize=(15,8))
-    for method in ['pool','reset']:
+    for method in ['pool','reset','coco_semantic']:
         for suffix in ['', '_b2']:
-            name='full2000_obj365_'+method+'800'+suffix
+            stem='full2000_semantic_init800' if method=='coco_semantic' else 'full2000_obj365_'+method+'800'
+            name=stem+suffix
             path=ROOT/'runs'/name/'metrics.jsonl'
             rows=[]
             if path.exists():

@@ -1,0 +1,7 @@
+__include__: ['./scene_semantic_init800.yml']
+output_dir: /home/fbohan/AIC/runs/full2000_semantic_init800
+validate: false
+summary_dir: /home/fbohan/AIC/experiments/full2000_pretraining/coco_semantic/local_summary
+train_dataloader:
+  dataset:
+    ann_file: /home/fbohan/AIC/data/annotations/train2000.json

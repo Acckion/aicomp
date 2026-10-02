@@ -12,8 +12,8 @@ ROOT=Path(__file__).resolve().parents[1]
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('--method',choices=['pool','reset'],required=True);p.add_argument('--gpu-index',type=int,required=True);p.add_argument('--large-probe',action='store_true');p.add_argument('--resume');p.add_argument('--resume-batch',type=int,choices=[1,2],default=1);a=p.parse_args()
-    assert not a.large_probe or a.method=='pool'
+    p=argparse.ArgumentParser();p.add_argument('--method',choices=['pool','reset','coco_semantic'],required=True);p.add_argument('--gpu-index',type=int,required=True);p.add_argument('--large-probe',action='store_true');p.add_argument('--resume');p.add_argument('--resume-batch',type=int,choices=[1,2],default=1);a=p.parse_args()
+    assert not a.large_probe or a.method in ['pool','coco_semantic']
     if a.resume:
         assert Path(a.resume).is_file()
         import torch
@@ -63,19 +63,21 @@ def main():
             try:fcntl.flock(gpu,fcntl.LOCK_EX|fcntl.LOCK_NB);break
             except BlockingIOError:status('waiting_existing_task');time.sleep(15)
         for selected in ([2,1] if batch==2 else [1]):
-            name=f'full2000_obj365_{a.method}800'+('_b2' if selected==2 else '')
+            stem='full2000_semantic_init800' if a.method=='coco_semantic' else f'full2000_obj365_{a.method}800'
+            name=stem+('_b2' if selected==2 else '')
             output=ROOT/'runs'/name
             assert not (output/'COMPLETE').exists()
             assert a.resume or not (output/'metrics.jsonl').exists()
             output.mkdir(parents=True,exist_ok=True)
             policy={'training_images':2000,'epochs':100,'effective_batch':8,'selected_micro_batch':selected,
-                    'source':'public Objects365-only X; no competition parent weights',
-                    'validation':False,'shadow_run':'scene_obj365_'+a.method+'800',
+                    'source':('public Objects365-to-COCO X with compatible category rows retained' if a.method=='coco_semantic' else 'public Objects365-only X; no competition parent weights'),
+                    'validation':False,'shadow_run':('scene_semantic_init800' if a.method=='coco_semantic' else 'scene_obj365_'+a.method+'800'),
                     'candidate_snapshot_epochs':[40,60,80,100],
                     'selection':'Compare corresponding schedule stages using independent shadow training and official feedback. Full-data AP is unavailable; no train-set best claim.',
                     'note':'Parallel full-data hypothesis trial, not confirmation of shadow or phase2 improvement.'}
             (output/'selection_policy.json').write_text(json.dumps(policy,indent=2))
             config=ROOT/'configs'/(name+'.yml')
+            source=ROOT/'checkpoints'/('dfine_x_obj2coco.pth' if a.method=='coco_semantic' else 'dfine_x_obj365.pth')
             if a.resume:
                 preflight=ROOT/'experiments/scene_semantic_init'/name/'preflight.json'
                 if not preflight.exists():
@@ -83,7 +85,7 @@ def main():
                     if code:
                         if selected==2:continue
                         raise RuntimeError('Resume batch1 preflight failed')
-                    smoke=[str(ROOT/'scripts/train_ir_content.py'),'--config',str(config),'--init-checkpoint',str(ROOT/'checkpoints/dfine_x_obj365.pth'),'--smoke']
+                    smoke=[str(ROOT/'scripts/train_ir_content.py'),'--config',str(config),'--init-checkpoint',str(source),'--smoke']
                     if run('resume_smoke_b'+str(selected),smoke):
                         if selected==2:continue
                         raise RuntimeError('Resume batch1 smoke failed')
@@ -101,7 +103,7 @@ def main():
                 raise RuntimeError('Full-data batch1 preflight failed')
             result=json.loads((ROOT/'experiments/scene_semantic_init'/name/'preflight.json').read_text())
             assert result['training_images']==2000 and result['heldout_images']==0 and result['validation_disabled']
-            command=[str(ROOT/'scripts/train_ir_content.py'),'--config',str(config),'--init-checkpoint',str(ROOT/'checkpoints/dfine_x_obj365.pth')]
+            command=[str(ROOT/'scripts/train_ir_content.py'),'--config',str(config),'--init-checkpoint',str(source)]
             code=run('smoke_b'+str(selected),command+['--smoke'])
             if code:
                 if selected==2:

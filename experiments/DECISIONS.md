@@ -766,3 +766,12 @@ B2 Torch上限8.5GiB、启动free>=9GiB；必须新跑reset B2最大992/EMA/3 fi
 watch_taxonomy_phase2_candidate固定full2000_obj365_pool800_b2第40轮，先要求shadow第10轮完整390图route_consistent，再等待full epoch40完整metrics/compact EMA落盘，并读取pool/reset最近3个共同预热后epoch：整体平均delta>=.5、排除仅5GT tricycle后的11类平均delta>0才准备包。证据不足等待、否定结果rejected，不将准备管线等同方法已有效。原官方macro12类仍主指标；排除tricycle只防稀疏类驱动筛选。3轮窗口尚不足的实际evidence函数检查返回None，不能提前选择；读取JSONL只使用已完整newline记录，避免采到正在追加的半行。
 
 推理仅RGB phase2官方1000图、800/AMP/原生Top100/EMA/无TTA无NMS，自己的GPU4锁与free>=3GiB/Torch2GiB cap，不抢训练锁。原生配置机制自动注册且已小子集检查，最终仍须390图路线检查先通过。包必须1000个正确唯一TXT名称/CRC通过/metadata1000、native100/AMP、leaderboard_score null。无自动提交、无57保证，候选准备后仍应复核当时影子趋势和官方反馈。首次pending watcher在完善不足窗口等待后核实无GPUworker并替换，最终controller2994438，数据1000test/2000train与全部test文件存在断言已由实际启动执行。
+
+
+## 2026-10-03 03:03：释放GPU0启动第三条全量公开类别迁移候选
+
+native_grid1真COMPLETE8轮，末轮53.8939低于独立control末轮54.4882；不推广原像素局部分支到2000图。旧worker2789150消失、gpu0项目锁实测空闲、GPU0 free14961MiB。释放资源用于新full2000_semantic_init800_b2：公开Objects365→COCO X保留五个明确对应目标类和chair→seat部分先验，同时DN对应行；未知类原初始化，不加载任何比赛父模型。对应独立shadow scene_semantic_init800目前仅早期优势，第三全量是并行假设，未称成熟或在线有效。
+
+run_full2000_pretraining增加coco_semantic方法分支，source明确dfine_x_obj2coco.pth而非Objects365-only，输出名full2000_semantic_init800(_b2)、shadow关联正确。全量2000图/100轮/validate=false/有效batch8/冻结BN/EMA/同增广调度；B2 cap8.5GiB、起步free>=9GiB，B1预正式失败回退仍可用。两个静态配置均实际YAML解析semantic_row_init true/12类/100epochs/2000数量/有效batch8/本机summary正确。持久输出GPU6 remote storage；没有外部训练图片或使用test标签。
+
+最大992/EMA/空GT/strict reload/3次实际更新预检通过peak5932.93MiB，完整smoke通过peak5954.65MiB。controller3001176/正式worker3002235在GPU7物理0，真实3次finite更新、next_batch12、peak5957.24MiB，verified_launch.json存证。新增两full名字的preflight注册与分支源选择均真实执行，不只编译。原5条影子和2条全量继续。监控脚本支持第三全量分支；仅核实身份替换绘图进程，monitor3002145每60秒，03:02:20实际更新，没改训练进程；新路线首个完整epoch前无假造loss点或AP。

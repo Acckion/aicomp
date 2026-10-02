@@ -1,0 +1,6 @@
+__include__: ['./full2000_semantic_init800.yml']
+output_dir: /home/fbohan/AIC/runs/full2000_semantic_init800_b2
+gradient_accumulation_steps: 4
+gpu_memory_limit_gib: 8.5
+train_dataloader:
+  total_batch_size: 2
