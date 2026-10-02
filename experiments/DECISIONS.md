@@ -606,3 +606,9 @@ GPU7服务器物理GPU3，自己的gpu3.lock与worker训练锁、余量>=9216MiB
 用户要求优先开训。GPU8卡2剩余8551MiB低于9216启动阈值，而卡4剩余9427MiB、此前可靠性对照已完整结束；只终止自身等待显存的controller3041456，无在跑worker。ir_corr_run增加--gpu-index与--detection-only，后者严格要求已完成4轮对应预训练、epoch4权重及passed门槛，直接接续检测预检，避免重跑6400步。新controller3742935持gpu4.lock，首个正式worker3752442；原监控继续60秒刷新，其他训练不中止。
 
 检测最大992/batch1、EMA驻留预检通过3次优化更新，loss26.8244/26.1867/56.7236（空GT）；peak4201.68MiB。第二步correspondence strength梯度.0006118非零，sampler shift有效，冻结projection/backbone无梯度，初始RGB恒等、更新后zeroIR恒等、encoder及decoder EMA hook归属、strict reload全部通过。完整runner smoke通过，峰值8036.22MiB（含初始化/加载峰值），仍在8.5GiB硬上限内；预检峰值不能替代完整runner峰值。正式8轮主实验已启动初始val400，完成后接续同预算8轮control，预训练完成不代表实际跨模态配准或检测收益。
+
+## 2026-10-02：生成今日首选phase2红外提交包
+
+用户告知当天还有两次机会。full2000_ir_content800已完成8轮，按训练前selection_policy预先指定epoch6作为首选学习阶段，不按train2000内AP选轮。采用单模型原生800整图Top100、RGB+IR+有效性mask，严格回载epoch6 EMA权重，预处理沿用PairedIRCoco的PIL BILINEAR与同一个边界黑区mask；不叠加未验证的新机制。GPU7物理GPU3自己的gpu3.lock、8.5GiB上限，实际完成官方phase2 1000成对图片推理。
+
+包完成并检查1000个TXT、12类编号、有限归一化框/置信度、每图<=100、RGB尺寸坐标还原TXT roundtrip误差<1e-4、ZIP CRC。SHA256=403e4d025bea34278280fa3f026e163567b402d4da3b0bf7c7179dc1c824d0f5；本地可下载experiments/phase2_ir_submission/submission.zip，manifest保留完整checkpoint与输入来源，原始输出GPU6 storage/submissions/full2000_ir_ep006_800。未代替用户提交、无phase2分数。建议先用一次测试新红外路线，第二次根据正式反馈与后续结果选择，不盲目把近邻epoch包连续提交。视觉patch8轮最好54.3658/control54.6373，neck适配8轮最好54.9076，均未支持今日提交；对应检测第4轮55.1338且control未跑完，尚无收益归因。
