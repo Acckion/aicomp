@@ -1,0 +1,58 @@
+__include__:
+- ./mechanism_base800.yml
+model: IRJointDFINE
+output_dir: /home/fbohan/AIC/runs/ir_joint800
+mechanism_imports:
+- extra_iou_metrics
+- ir_joint_adaptation
+epochs: 8
+warmup_epochs: 1
+gradient_accumulation_steps: 4
+checkpoint_freq: 8
+inference_checkpoint_interval: 2
+optimizer:
+  lr: 1.0e-05
+  params:
+  - params: ^ir_samplers\.
+    lr: 3.0e-05
+  - params: ^ir_encoder\.(?!.*(?:norm|bn)).*$
+    lr: 3.0e-06
+  - params: ^ir_encoder\.(?=.*(?:norm|bn)).*$
+    lr: 3.0e-06
+    weight_decay: 0.0
+  - params: ^backbone\.(?!.*(?:norm|bn)).*$
+    lr: 1.0e-06
+  - params: ^(?:encoder|decoder)\.(?=.*(?:norm|bn)).*$
+    weight_decay: 0.0
+train_dataloader:
+  total_batch_size: 2
+  num_workers: 2
+  dataset:
+    type: PairedIRCoco
+    archive: "/home/fbohan/AIC/\u521D\u8D5B\u6570\u636E\u96C6-\u9762\u5411\u57CE\u5E02\
+      \u573A\u666F\u7684\u591A\u6A21\u6001\u76EE\u6807\u68C0\u6D4B/\u8BAD\u7EC3\u96C6\
+      /AIC2026_Train_2000.zip"
+    training: true
+    size: 800
+    transforms: null
+val_dataloader:
+  total_batch_size: 2
+  num_workers: 2
+  dataset:
+    type: PairedIRCoco
+    archive: "/home/fbohan/AIC/\u521D\u8D5B\u6570\u636E\u96C6-\u9762\u5411\u57CE\u5E02\
+      \u573A\u666F\u7684\u591A\u6A21\u6001\u76EE\u6807\u68C0\u6D4B/\u8BAD\u7EC3\u96C6\
+      /AIC2026_Train_2000.zip"
+    training: false
+    size: 800
+    transforms: null
+scaler:
+  type: GradScaler
+  enabled: true
+  init_scale: 1.0
+IRJointDFINE:
+  backbone: HGNetv2
+  encoder: HybridEncoder
+  decoder: DFINETransformer
+  ir_enabled: true
+  adapt_ir_neck: true

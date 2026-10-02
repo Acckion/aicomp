@@ -530,3 +530,9 @@ run_gpu8_successors.py两个远端持久controller已启动（当前等待setup/
 后续设计依据：若局部IR空间结构贡献明确，优先让已证明有效的对齐路径带动IR高层/neck小范围联合适配（仅最终RGB坐标GT监督，避免IR独立拟合不对应的RGB框）；再验证IR在候选形成前参与表征和类别选择，保持单检测头/300query而非两模型输出拼接。若仅几何或全局背景贡献，则先处理语义对应/局部可靠性，不盲目扩展双流网络。逐项同预算对照，不把多个损失及尺度同时叠加。AR-CNN https://arxiv.org/abs/1901.02645 涉及区域对齐监督，其条件不能直接搬到本赛缺乏IR框配准标签；MDQF https://arxiv.org/abs/2601.08458 为双分支query交互提供机制参考，不能把独立RGB/TIR预测或论文提升当本赛可合规融合成果。
 
 IR四条件完整val400探针已完成：real mAP55.1707、geometry_only54.0516、spatial_shuffled54.0754、global_mean54.5718。real相对geometry_only+1.1191、相对空间shuffle+1.0953、相对global_mean+.5989。这支持当前路径确实依赖IR内容，且局部空间内容比仅全局均值有额外作用；仍是冻结模型推理干预，不能将global_mean的差直接分解成独立训练收益，也不证明对齐偏移正确。real/geometry_only类AP light53.0927/44.2347、car60.3099/57.8815，收益集中与同预算RGB对照一致。此结果将下一轮优先级收敛到IR高层与neck的联合适配、随后更早的类条件内容交互；不优先扩大固定偏移范围或无依据增加query数。
+
+## 2026-10-02：启动IR neck联合适配验证
+
+用户授权尝试。IRJointDFINE沿用IRContent全部参数名和内容相关位移/后三层decoder注入，仅增加adapt_ir_neck开关。实验解冻IR encoder（neck），IR backbone保持no_grad，IR两分支eval固定BN统计；控制组冻结neck。两个run同初始化ir_content800/best.pth、同seed20260929、train1600/val400、8轮、batch2累积4、800整图动态尺度、相同增强与调度。成熟采样器lr3e-5、IR neck lr3e-6（norm/bn不衰减）、RGB lr1e-5/骨干1e-6，两组仅neck梯度路径有别。不额外使用独立IR坐标框损失，不增加query，不拼接多个检测器输出，不同时改变早期候选交互。
+
+GPU7本机物理GPU6独占自己的gpu6.lock；每进程8.5GiB上限，剩余>=9216MiB才开始预检。run_ir_joint.py持久controller先执行最大992/batch2真实梯度与optimizer更新预检，再smoke与正式训练8轮，再冻结neck同预算续训8轮；输出checkpoints/gpu6_storage/ir_joint/runs，通过runs同名链接，源代码不含数据/权重。预检验证neck非零有限梯度、骨干无梯度、控制neck无梯度、空GT+缺失模态有限、EMA hook归属、严格回载与缺失IR恒等；失败不放行正式训练。plot_ir_joint.py独立每60秒刷新mAP@50-95/AP75/AP90/小目标AP与loss。更早IR内容交互暂不和此实验同时叠加。
