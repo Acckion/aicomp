@@ -1,5 +1,7 @@
 """Trace proposal/query/top100 geometry on val only; never correct submissions."""
 import argparse
+import hashlib
+import importlib
 from collections import defaultdict
 import json
 from pathlib import Path
@@ -15,14 +17,22 @@ from torchvision.ops import box_convert, box_iou
 from src.core import YAMLConfig
 
 
-def main(limit):
+def main(args):
+    limit = args.limit
     torch.set_num_threads(2)
-    torch.cuda.set_per_process_memory_fraction(8.5 * 1024**3 / torch.cuda.get_device_properties(0).total_memory)
+    assert 0 < args.memory_gib <= 8.5
+    torch.cuda.set_per_process_memory_fraction(args.memory_gib * 1024**3 / torch.cuda.get_device_properties(0).total_memory)
     torch.backends.cuda.matmul.allow_tf32 = True
-    cfg = YAMLConfig(str(ROOT / 'configs/ft_aug800_shared3.yml'))
+    cfg = YAMLConfig(args.config)
+    for module in cfg.yaml_cfg.get('mechanism_imports', []):
+        importlib.import_module(module)
     model = cfg.model
-    state = torch.load(ROOT / 'runs/ft_aug800/weights_epoch_020.pth', map_location='cpu', weights_only=False)
-    model.load_state_dict(state['model'], strict=True)
+    state = torch.load(args.checkpoint, map_location='cpu', weights_only=False)
+    if args.require_ema:
+        assert 'ema' in state or state.get('source') == 'EMA', 'EMA provenance required'
+    weights = state['ema']['module'] if 'ema' in state else state['model']
+    model.load_state_dict(weights, strict=True)
+    del weights, state
     model.cuda().eval()
     decoder = model.decoder
     original = decoder._select_topk
@@ -38,24 +48,29 @@ def main(limit):
         return original(memory, logits, anchors, topk)
 
     decoder._select_topk = select
-    ann = json.loads((ROOT / 'data/annotations/val400.json').read_text())
+    ann = json.loads(Path(args.annotations).read_text())
     by_image = defaultdict(list)
     for a in ann['annotations']:
         by_image[a['image_id']].append(a)
     records = []
     started = time.monotonic()
     images = ann['images'][:limit] if limit else ann['images']
-    out = ROOT / 'experiments/query_pipeline_audit'
+    out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
     with torch.inference_mode():
         for index, info in enumerate(images):
-            image = Image.open(ROOT / 'data/train' / info['file_name']).convert('RGB')
-            prediction = model(TF.to_tensor(TF.resize(image, [800, 800])).unsqueeze(0).cuda())
+            with Image.open(Path(args.image_root) / info['file_name']) as file:
+                image = file.convert('RGB')
+            with torch.autocast('cuda', dtype=torch.float16, enabled=args.amp):
+                prediction = model(TF.to_tensor(TF.resize(image, [800, 800])).unsqueeze(0).cuda())
+            assert prediction['pred_boxes'].isfinite().all() and prediction['pred_logits'].isfinite().all()
             final = box_convert(prediction['pred_boxes'][0].float(), 'cxcywh', 'xyxy').clamp(0, 1)
             probabilities = prediction['pred_logits'][0].sigmoid()
+            number_classes = probabilities.shape[-1]
+            assert number_classes == len(ann['categories'])
             classes = probabilities.argmax(-1)
             scores, pair_indices = probabilities.flatten().topk(100)
-            query_indices, pair_classes = pair_indices // 12, pair_indices % 12
+            query_indices, pair_classes = pair_indices // number_classes, pair_indices % number_classes
             targets = by_image[info['id']]
             if not targets:
                 continue
@@ -91,6 +106,10 @@ def main(limit):
               'final_argmax_class_iou', 'final_top100_correct_class_iou']
 
     def summarize(rows):
+        if not rows:
+            return {'gt_boxes': 0, 'geometry_coverage': {stage: {str(t): None for t in [.5, .75, .9]} for stage in stages},
+                    'mean_relative_center_error_xy': None, 'mean_relative_size_error_wh': None,
+                    'final_iou75_but_not_top100_class_iou75': 0, 'encoder_iou50_lost_at_topk': 0}
         return {'gt_boxes': len(rows), 'geometry_coverage': {
             stage: {str(threshold): sum(r[stage] >= threshold for r in rows) / len(rows)
                     for threshold in [.5, .75, .9]} for stage in stages},
@@ -99,7 +118,11 @@ def main(limit):
             'final_iou75_but_not_top100_class_iou75': sum(r['final_any_class_iou'] >= .75 and r['final_top100_correct_class_iou'] < .75 for r in rows),
             'encoder_iou50_lost_at_topk': sum(r['encoder_all_iou'] >= .5 and r['encoder_selected_iou'] < .5 for r in rows)}
 
-    report = {'images': len(images), 'checkpoint': 'ft_aug800 epoch20 EMA', 'size': 800,
+    report = {'images': len(images), 'checkpoint': str(Path(args.checkpoint).resolve()),
+              'checkpoint_sha256': hashlib.file_digest(Path(args.checkpoint).open('rb'), 'sha256').hexdigest(),
+              'annotations': str(Path(args.annotations).resolve()),
+              'annotation_sha256': hashlib.file_digest(Path(args.annotations).open('rb'), 'sha256').hexdigest(),
+              'amp': args.amp, 'require_ema': args.require_ema, 'size': 800,
               'seconds': time.monotonic() - started, 'all': summarize(records),
               'short_side_under16': summarize([r for r in records if r['short_side_800'] < 16]),
               'per_class': {c['name']: summarize([r for r in records if r['category_id'] == c['id']])
@@ -115,4 +138,12 @@ def main(limit):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--limit', type=int, default=0)
-    main(parser.parse_args().limit)
+    parser.add_argument('--config', default=str(ROOT/'configs/ft_aug800_shared3.yml'))
+    parser.add_argument('--checkpoint', default=str(ROOT/'runs/ft_aug800/weights_epoch_020.pth'))
+    parser.add_argument('--annotations', default=str(ROOT/'data/annotations/val400.json'))
+    parser.add_argument('--image-root', default=str(ROOT/'data/train'))
+    parser.add_argument('--output', default=str(ROOT/'experiments/query_pipeline_audit'))
+    parser.add_argument('--memory-gib', type=float, default=8.5)
+    parser.add_argument('--amp', action='store_true')
+    parser.add_argument('--require-ema', action='store_true')
+    main(parser.parse_args())
