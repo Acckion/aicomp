@@ -656,3 +656,33 @@ phase2红外49.752未兑现本地收益后，不再将+.1峰值当作提交依�
 新增analyze_validation_errors.py仅独立val400真实GT，与original RGB1600在800缓存参考（不是同预算续训control）做score>=.25、IoU.5一对一描述误差分解。IR从2716→2725个正确匹配，仅+9/3030GT；几何无同类支持1577→1490，定位错位718→663，异类重叠60→79，重复155→139。灯类正确245→247、无同类支持239→183，是主要改善来源之一；自行车正确121→123，但几何无支持98→113、异类9→15、重复12→20；垃圾桶正确45→45、异类6→11、无支持46→51。阈值误差计数不是AP/TIDE精确分类，可能受完整标注影响；不外推成phase2错误定论。与此前IR宏观收益集中light/car吻合，尚未获得广泛新目标覆盖。
 
 当前策略：不再凭val400单次峰值、近邻epoch或未完成机制因果对照推荐提交。scene-group fresh baseline继续准备，目的为验证筛选可靠性而非承诺突破；四组native-grid保持同预算对照，初轮尚负，不推广到full2000。后续候选需显示多类/困难场景与高IoU定位收益，而不是只减少单类局部误检；没有新机制证据时如实报告，不以剩余提交机会为理由包装更好承诺。phase2预测仅作描述审计，未修改提交文件、未据人工查看产生训练标签或测试训练。
+
+## 2026-10-03：GPU6分组RGB已真正启动；原像素信息机制继续诊断
+
+GPU6新AICOMP packed环境已解包并重定位，Torch2.5.1+cu124 CUDA可用，OpenCV headless4.10.0.84补装成功；旧pack未含cv2，远端系统Python3.9也无hashlib.file_digest，bootstrap分别修正为兼容SHA256和显式依赖检查。复制与重定位失败均在正式训练之前，失败日志保留；没有停止他人GPU进程。
+
+scene_rgb800 controller1523366/worker1525503在GPU6物理卡2正式100轮训练，3次有限真实optimizer更新已写入audit。最大992、EMA驻留、空GT、严格回载及group-disjoint预检实际通过，peakallocated3653.73MiB，独立smoke也通过；公开Obj365+COCO初始化，1610train/390val，不复用旧比赛checkpoint。单卡batch1累积8、6GiB硬cap，当前没有完整epoch或新的线上结果，监控60秒刷新。
+
+训练集32图特征兼容诊断（15图有短边<16前景，峰值790.60MiB，无优化）：浅层区域input projection与成熟全图encoder输出的小目标位置余弦均值-.03552，经过同一encoder的区域输出为.89153（空间打乱.60154），相对全图RMS分别1.835/.878。浅层与多尺度语义输出不是同一表征，线性桥接必须学习转换；余弦不是检测能力，不能据此保证语义区域更好。原像素区域编码−先800下采样后区域编码的残差RMS，小目标.155、背景.236，提示背景细节干扰不可忽略。
+
+已准备native_encoded_delta.py：原像素区域和低细节同区域分别经共享骨干+encoder（regional无梯度），相减去除纯裁剪上下文差异，零初始化通道桥接并按全图特征RMS限制残差至.25，注入候选形成之前。只是结构准备/编译通过，尚未梯度/回载预检或正式训练，不声称完成新的实验。
+
+完整原图几何诊断64个train小目标（1920原图，无GT裁剪，输入800方形与1920x1088全帧）：同类argmax候选最优IoU均值.75276→.61431，IoU>=.75覆盖37→18、>=.90为6→1；任意类覆盖40→21/6→1，峰值913.52MiB。是现有800父权重未经原尺寸训练的oracle几何，不是AP，不能否定高分辨率训练；明确排除直接1920原图推理作为补救。初版诊断误用了历史zoom输出路径，真实native结果已移到独立目录，随后用原audit_zoom_teacher及原权重/采样重新计算，原zoom报告和64条记录恢复；均值和7→12等统计与先前完全一致。修正脚本已固定独立输出，不以错误目录数据作为历史crop证据。
+
+已有raw native-grid两主实验初两轮仍低于各自control；新增自动预算止损：待四组各自第4轮快照真实落盘，若每对第3/4轮都落后>.5分且小目标AP没有>.5增益，停止该对自己的controller/worker、保留4轮和全部checkpoint。只匹配精确脚本与run参数且验证进程归属，真实4个live controller正例、无关run及control名字不能误匹配main的负例检查通过。守护PID2846956，每60秒检查；尚未触发，未谎称完成8轮，也不按phase2反馈调整提交框或训练标签。
+
+
+## 2026-10-03 00:43：预训练类别权重继承与重置的独立分组对照已启动
+
+phase2 49.136反馈后补查初始化：80→12类别时原loader重置整个encoder候选分类头、decoder分类头和denoising embedding。新增semantic_init_rows仅继承公开COCO中可核实的person/boat/bicycle/car/sports ball五类，以及明确声明不完全等价的chair→seat先验；其他类别保留原初始化，严格断言非分类层一致和未知行未改，没有额外外部图像。实际模型hidden_dim=256（共享global覆盖局部配置384），不能仅按YAML片段判断结构。
+
+scene_semantic_init800与scene_rgb_fastcontrol800同一1610/390背景分组、同公开Obj365+COCO权重/seed/配方，各100轮，分别GPU7物理2/6。正式controller2862945/2862946、worker2864282/2864288在00:43真实存活，均至少3次有限optimizer更新，当前第一轮约650/1610批次。两组最大992/EMA驻留/空GT/严格回载预检均通过，峰值3653.73MiB；smoke也通过。初始化loss差异不能证明AP改善。GPU6的scene_rgb800仍作为相同重置配方的独立设备重复，不能称第三种方法。三组按完整epoch每60秒更新monitoring/scene_rgb/overview.png。
+
+线上反馈的当前可信结论：本地55.457不支持线上提升，红外正式包49.752/49.136均未胜过RGB49.986。样本量、起点、配方与后处理不同，不能把下降单独归因于IR或1600样本；无test GT不能把新增预测判为误检。新分组是纠正筛选依据的尝试，而不是57分承诺。
+
+
+## 2026-10-03：Objects365专用公开权重迁移对照已启动GPU8
+
+核对官方D-FINE Model Zoo：https://github.com/Peterande/D-FINE，Objects365-only与当前Obj365→COCO公开权重不同。实际下载官方dfine_x_obj365.pth到GPU6持久storage，再同步GPU8，254464712 bytes、SHA256 a3e3177e67fecf958d77599482730aaeb2700794b79a9cdd269470bdd8cb14eb。CPU逐tensor比较同keys，只有score_head类别366 vs80与DN367 vs81形状不同，非分类层形状完全匹配，实际hidden_dim256。Objects365官方配置不remap且num_classes366，不能猜测0/1-based类别或随意继承365类行。
+
+scene_obj365_reset800独立复用scene_rgb800配方/seed/1610train390val/100轮，只将公开初始化改为Objects365-only，12类头按原loader重置；与scene_rgb_fastcontrol800形成来源对照，不增加外部训练图像。GPU8物理卡2自己的锁可用且空余8551MiB，6GiB硬cap，全部2000图存在和权重SHA远端验证通过。最大992/EMA驻留/3次有限真实更新/空GT/严格回载预检通过，峰值3656.24MiB；smoke通过。controller2585343/正式worker2592983已进入训练阶段，后续审计实际步数；不把预检更新冒充正式训练更新。输出GPU8本地runs并经现有FUSE映射监控，四组分组训练图60秒更新。官方预训练建议是待验证的来源选择依据，不证明比赛提升或57分。

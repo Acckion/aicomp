@@ -1,0 +1,4 @@
+__include__: ['./scene_rgb800.yml']
+output_dir: /home/fbohan/AIC/runs/scene_semantic_init800
+semantic_row_init: true
+mechanism_imports: [extra_iou_metrics, semantic_init_rows]

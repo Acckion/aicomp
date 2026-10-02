@@ -40,10 +40,10 @@ def main():
                 p=ROOT/'data/annotations'/name;tar.add(p,arcname=str(p.relative_to(ROOT)))
             p=ROOT/'experiments/scene_groups/report.json';tar.add(p,arcname=str(p.relative_to(ROOT)))
         ssh = ' '.join(shlex.quote(v) for v in SSH[:-1])
-        run('transfer_source',['rsync','-a','--info=progress2','-e',ssh,str(archive),HOST+':'+REMOTE+'/backups/scene_source.tar.gz'])
-        run('transfer_environment',['rsync','-a','--info=progress2','-e',ssh,str(ROOT/'backups/AICOMP-env.tar.gz'),HOST+':'+REMOTE+'/backups/AICOMP-env.tar.gz'])
-        run('transfer_images',['rsync','-a','--info=progress2','-e',ssh,str(ROOT/'data/train')+'/',HOST+':'+REMOTE+'/data/train/'])
-        run('transfer_pretrained',['rsync','-a','--info=progress2','-e',ssh,str(ROOT/'checkpoints/dfine_x_obj2coco.pth'),HOST+':'+REMOTE+'/checkpoints/dfine_x_obj2coco.pth'])
+        run('transfer_source',['rsync','-a','--info=stats1','-e',ssh,str(archive),HOST+':'+REMOTE+'/backups/scene_source.tar.gz'])
+        run('transfer_environment',['rsync','-a','--info=stats1','-e',ssh,str(ROOT/'backups/AICOMP-env.tar.gz'),HOST+':'+REMOTE+'/backups/AICOMP-env.tar.gz'])
+        run('transfer_images',['rsync','-a','--info=stats1','-e',ssh,str(ROOT/'data/train')+'/',HOST+':'+REMOTE+'/data/train/'])
+        run('transfer_pretrained',['rsync','-a','--info=stats1','-e',ssh,str(ROOT/'checkpoints/dfine_x_obj2coco.pth'),HOST+':'+REMOTE+'/checkpoints/dfine_x_obj2coco.pth'])
         # All files live in a new task-owned directory. Never replace another user's environment.
         relocate = '''import json,os,subprocess,sys,tarfile,hashlib
 from pathlib import Path
@@ -63,23 +63,25 @@ for folder in ['scripts','configs']:
 for n in ['scene_train','scene_val']:
  d=json.loads((root/'data/annotations'/f'{n}.json').read_text())
  assert all((root/'data/train'/i['file_name']).exists() for i in d['images'])
-with (root/'checkpoints/dfine_x_obj2coco.pth').open('rb') as f:sha=hashlib.file_digest(f,'sha256').hexdigest()
+with (root/'checkpoints/dfine_x_obj2coco.pth').open('rb') as f:sha=hashlib.sha256(f.read()).hexdigest()
 assert sha==PUBLIC_PRETRAIN_SHA
 runtime={**os.environ,'LD_LIBRARY_PATH':str(env/'lib/python3.11/site-packages/nvidia/nvjitlink/lib')}
+if subprocess.run([str(env/'bin/python'),'-c','import cv2'],env=runtime,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode:
+ subprocess.run([str(env/'bin/python'),'-m','pip','install','--no-deps','opencv-python-headless==4.10.0.84'],env=runtime,check=True)
 subprocess.run([str(env/'bin/python'),'-c','import torch,cv2,faster_coco_eval; assert torch.cuda.is_available(); print(torch.__version__,torch.cuda.device_count())'],env=runtime,check=True)
 out=root/'experiments/scene_rgb_gpu6';out.mkdir(parents=True,exist_ok=True)
 with (out/'controller.log').open('ab') as log:
  p=subprocess.Popen([str(env/'bin/python'),'-u',str(root/'scripts/run_scene_rgb.py')],cwd=root,env=runtime,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
 (out/'controller.pid').write_text(str(p.pid));print('REMOTE_CONTROLLER',p.pid)
 '''
-        with (ROOT/'checkpoints/dfine_x_obj2coco.pth').open('rb') as f:sha=hashlib.file_digest(f,'sha256').hexdigest()
+        with (ROOT/'checkpoints/dfine_x_obj2coco.pth').open('rb') as f:sha=hashlib.sha256(f.read()).hexdigest()
         relocate=relocate.replace('PUBLIC_PRETRAIN_SHA',repr(sha))
         command='python -c '+shlex.quote(relocate)
         run('relocate_and_launch',SSH+[command])
         status('remote_pipeline_started',remote_project=REMOTE,remote_host=HOST,
                note='Preflight and smoke must pass before formal training; not a completed training claim')
     except Exception as error:
-        status('failed',error=repr(error))
+        status('failed',error=repr(error)[:500])
         raise
 
 

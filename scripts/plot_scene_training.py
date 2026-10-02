@@ -1,4 +1,4 @@
-"""Minute-updated native-pixel factorial results; complete epochs only."""
+"""Minute-updated fresh pretraining comparison; complete epochs only."""
 import fcntl
 import json
 import os
@@ -13,7 +13,7 @@ OUT.mkdir(parents=True, exist_ok=True)
 
 def draw():
     fig, axes = plt.subplots(2, 3, figsize=(15, 8))
-    for name in ['scene_rgb800']:
+    for name in ['scene_rgb800', 'scene_rgb_fastcontrol800', 'scene_semantic_init800', 'scene_obj365_reset800']:
         path = ROOT / 'runs' / name / 'metrics.jsonl'
         rows = []
         if path.exists():
@@ -40,7 +40,7 @@ def draw():
         ax.grid(alpha=.25)
         if ax.lines:
             ax.legend(fontsize=8)
-    fig.suptitle('Fresh RGB pretraining | scene-grouped holdout390 | not phase2 score | refreshed '+time.strftime('%F %T'))
+    fig.suptitle('Fresh RGB: mapped class initialization vs reset | grouped holdout390 | not phase2 | '+time.strftime('%F %T'))
     fig.tight_layout()
     tmp = OUT / f'overview.{os.getpid()}.png'
     fig.savefig(tmp, dpi=130)
