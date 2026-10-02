@@ -32,6 +32,13 @@ class NativeEncodedDeltaDFINE(DFINE):
                 for image in packed:
                     h,w=map(int,image[6,0,:2].detach().cpu().tolist())
                     assert h>0 and w>0
+                    # The global view already has at least the original pixel
+                    # dimensions here. An original-minus-reconstructed delta
+                    # would mostly measure interpolation rather than restore
+                    # detail discarded by shrinking the original image.
+                    if h <= self.size and w <= self.size:
+                        maps.append(image.new_zeros((1,self.encoder.hidden_dim,*shape)))
+                        continue
                     original=image[None,3:6,:h,:w]
                     low=F.interpolate(image[None,:3,:self.size,:self.size],size=(h,w),mode='bilinear',align_corners=False)
                     if self.detail_mode=='low':original=low
