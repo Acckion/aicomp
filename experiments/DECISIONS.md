@@ -548,3 +548,23 @@ GPU7本机物理GPU6独占自己的gpu6.lock；每进程8.5GiB上限，剩余>=9
 全量包含原val400，所以validate:false，绝不把训练内AP当独立验证或用于选best；全量每轮保留EMA快照，无独立mAP。候选预先参考原1600峰值epoch7：1600版本7*200=1400步，2000版本每轮250步，第6轮1500步作为首选学习阶段参考、第7轮作按数据遍历轮次的备选；全程8轮供追溯。两个版本余弦调度长度不同，不称这两种参考严格等价，也不保证phase2收益或最佳轮次。phase2未进入训练或选择规则。
 
 GPU7服务器物理GPU3，自己的gpu3.lock与worker训练锁、余量>=9216MiB才运行、每进程8.5GiB限额；输出checkpoints/gpu6_storage/full2000_ir/runs而非根盘，controller2481862先真实预检→smoke→训练，其他实验不中止。最大992/batch2且EMA驻留预检通过三次优化更新，peakallocated6819.64MiB；初始原生RGB恒等、缺失IR恒等、空GT有限、sampler shift/output有效梯度、EMA hook归属及严格回载均通过。2000唯一图ID与validate:false已检查。plot_full2000_ir.py每60秒刷新loss、框回归loss、动态LR与实际批次，不伪造mAP曲线。
+
+## 2026-10-02：依据最新负结果重新筛选突破方向（研究，未启动新训练）
+
+用户要求红外训练期间查论文、比赛经验、前沿模型，寻找更大提升。实时核对GroundingDINO完整12轮最好50.8632/末轮50.5707，HTI8轮最好54.6059/control54.5359且正确/错配文本消融几乎相同，coverage ROI54.5027/control54.6227。IR门控开8轮最好55.2204，关门控对照第6轮已55.4162，不能把gate当正向机制；该对照仍未结束。可靠性模块关闭版包含15%缺失训练，与旧IR-content存在训练和初始化差别，不能仅凭55.4162-55.1565断言modality dropout独立因果收益。当前neck联合适配与全量2000训练继续，没有因为研究中止它们。
+
+核对原实现：vl_distillation.py以训练GT裁剪CLIP pooled区域特征、经教师一致性筛选后监督末层query，不应一概说成全局图像蒸馏。HTI为固定12类/背景文本向量注入deep HGNet及P3。二者都没有把当前图片的冻结视觉patch特征作为推理时的空间输入；因此视觉foundation token增强调用链尚未验证，不能因CLIP审核、末层向量KD和静态文本失败而判定此路径失败。
+
+第一优先：Frozen-DETR式冻结视觉特征增强，保留成熟D-FINE的HGNet、检测头与RGB路径，用单个离线CLIP/DINO公开pretrained视觉编码器提供当前图片的patch+区域context；先将局部patch带坐标的零残差注入encoder，后独立验证context query交互，不先同时更换骨干/teacher/loss。仅产生一套RGB坐标输出，无多检测器投票/框平均。小目标不再使用整图224/336缩小后的pool向量：区域编码必须保留上下文并明确恢复全图位置；teacher冻结可分块计算和仅在官方train缓存，最大尺度及8.5GiB仍须真实检查。Frozen-DETR NeurIPS2024 https://arxiv.org/abs/2410.19635 在R50-DINO COCO12轮单VFM+2.9AP、两VFM+4.8AP；不是本赛D-FINE-X增益保证，不建议直接双基础模型。官方可用源码 https://github.com/iSEE-Laboratory/Frozen-DETR 。
+
+同一路线的泛化验证：VFM4SDG https://arxiv.org/abs/2604.21502 （2026预印本，未核实可直接使用的完整官方源码）以冻结DINOv3的空间token关系约束目标/背景与实例关系，并用源域视觉类别prototype/context增强query。在其跨天气bench有大收益，但其mAP口径、数据规模、baseline均不同，绝不能换算本赛+7。先比较已有独立val400的清晰/退化、细长/小目标、场景分层及常见类；如需真正新场景holdout，必须从未见该组的公开预训练起点训练，不拿当前已见图的模型声称新holdout。prototype只由train1600GT建立，val400不进入缓存或prototype。token关系训练可采样前景/邻近背景和mask对角以限制N²显存，但这些是本项目拟议适配，不是原论文已证实效果。
+
+第二独立优先：跨模态对应自监督预训练。CVPR2025 Self-Supervised Spatial Correspondence Across Modalities https://arxiv.org/html/2506.03148v1 同模态已知crop循环+跨模态往返对应；论文只跨模态损失会不稳定，同模态预热再联合较好。作者repo https://github.com/ayshrv/cmrw 仍为Code coming soon，不能承诺拉下来就能开训；需要按本赛单幅成对图重写轻量适配。当前shift只通过检测loss间接学、均值小且未饱和不证明物理对齐；先train1600学RGB/IR局部相似性与已知同模态位移/缩放恢复，随后跨模态cycle，排除位置捷径、背景占主导以及双向任意一致退化。错配IR对照、缺失IR和真实采样位置审计不可省；没有IR box/keypoint标签，不伪造RGB框即IR框监督。提高correspondence后再将IR信息放到候选形成之前，与现有neck适配分开归因。
+
+第三备选：前景/背景区别对待的频域学习。SET CVPR2025 https://openaccess.thecvf.com/content/CVPR2025/html/Sun_SET_Spectral_Enhancement_for_Tiny_Object_Detection_CVPR_2025_paper.html 提出背景高频抑制及训练扰动，报告AI-TOD对RFLA+3.2AP；WaveMamba ICCV2025 https://openaccess.thecvf.com/content/ICCV2025/html/Zhu_WaveMamba_Wavelet-Driven_Mamba_Fusion_for_RGB-Infrared_Object_Detection_ICCV_2025_paper.html 则区分低频融合与高频增强。两者不能简单视为同一机制。此前P2/ROI并未验证背景频谱竞争。先在训练图对已有feature做频段/前景背景遮蔽诊断，若是背景压制小目标，再采用训练期GT仅辅助前景/背景差异学习，保持推理无需GT。不能全图blur/绝对max IR高频，也不能把训练内GT mask理想干预当可部署提升。
+
+筛除候选：RT-DETRv4 https://arxiv.org/html/2510.25257v1 官方 https://github.com/RT-DETRs/RT-DETRv4 完整可训练，以DINOv3 patch监督AIFI后F5并用GAM梯度范数动态约束；D-FINE-L消融53.1→53.4(+.3)，直接DSI仅+.1。这是可复现对照，不是值得孤注一掷的突破主线。SAM3官方 https://github.com/facebookresearch/sam3 有离线bbox/mask与fine-tuning，完整模型微调不宜在当前8.5GiB预算直接押注；官方前提Python3.12/Torch2.7+/新CUDA且权重需要申请，未下载/升级当前AICOMP。Thermal-Det CVPR2026 https://arxiv.org/abs/2605.10130 依赖GroundingCap-1M转热域大规模外部训练，不能照搬其数据配方；只可理解thermal-domain semantic adaptation思路或考察允许的公开预训练。
+
+比赛经验：ICCV2025 AI City Track4主报告 https://openaccess.thecvf.com/content/ICCV2025W/AICity/papers/Tang_The_9th_AI_City_Challenge_ICCVW_2025_paper.pdf 描述排名靠前方法的畸变适配、数据策略与双模型推理，鱼眼场景和本赛不同；本赛规则禁止外部训练数据、测试训练以及简单投票/均框，因此只借鉴针对实际成像几何/域差异设计representation和训练的经验，不复制双模型提交。重新读附件赛题列出的Bi-directional fusion/DSSM https://www.sciencedirect.com/science/article/pii/S1566253525010474 与RGBDT500/RDTTrack https://xuefeng-zhu5.github.io/RGBDT500/ ：前者是SuperYOLO/600epoch及tiny损失，不应把DSSM当新万能损失（已做尺度辅助/NWD负结果）；后者是有初始目标的tracking、prompt/正交融合，不等于未知多目标检测，也不能推断本赛数据必来自该数据集。
+
+下一轮建议先独立做视觉patch增强和对应预训练两条，不以+.1峰值推广。视觉增强需真实/置零/同图空间打乱/其他图错配视觉token消融，改善应覆盖多数常见类和困难分层；对应路线要空间真实性和配对依赖证据，再看AP75/90。原val全查询IoU.9几何覆盖仅33.56%、短边<16仅8.24%也要求检查定位，而不再盲目增query或再试既有tiny后处理。以上是研究筛选和具体实验设计，尚未实现/启动这些新训练，不承诺phase2达到57。
