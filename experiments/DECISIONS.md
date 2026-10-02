@@ -600,3 +600,9 @@ GPU7服务器物理GPU3，自己的gpu3.lock与worker训练锁、余量>=9216MiB
 若门槛通过，自动执行ir_corr_detection_preflight.py→ir_corr800 smoke/8轮检测→ir_corr_control800 smoke/8轮对照，串行稳定队列（不宣称两检测已启动）。两者从相同原始ft_aug800 RGB父、相同IRteacher起步；IRContent sampler零残差初始化，保持原RGB/IR内容路径。冻结对应投影仅做16x16局部内容匹配(.20归一化搜索窗)、熵控制的连续采样网格；独立trainable strength零初始化，原IR特征+strength*tanh的重采样差值作为残差，避免把低分辨率soft对应直接取代成熟IR证据。对应本身不是精确像素配准。新strength lr3e-4，原samplers/RGB/骨干配方不改；关闭correspondence的control，其余相同。batch1累积8、8轮同预算；与ir_joint成熟父模型不同，不能用绝对峰值简单归因。检测预检必须检查新strength第二步非零有限梯度、projection无梯度、EMA驻留/hook归属、zeroIR和原始RGB恒等、空GT、strict reload；预检尚未运行，等待预训练完成。
 
 监控ir_corr_monitor.py每60秒更新train-only loss、已知intra变换endpoint/recall、cycle及后续独立val400 mAP@50-95图。对应预训练不报告mAP或承诺phase2收益。源码ir_corr_pretrain.py/ir_corr_alignment.py/ir_corr_detection_preflight.py/ir_corr_run.py/ir_corr_monitor.py和三个独立configs已同步GPU8，原有其他实验继续。
+
+## 2026-10-02：优先启动对应检测训练，迁移至GPU8卡4
+
+用户要求优先开训。GPU8卡2剩余8551MiB低于9216启动阈值，而卡4剩余9427MiB、此前可靠性对照已完整结束；只终止自身等待显存的controller3041456，无在跑worker。ir_corr_run增加--gpu-index与--detection-only，后者严格要求已完成4轮对应预训练、epoch4权重及passed门槛，直接接续检测预检，避免重跑6400步。新controller3742935持gpu4.lock，首个正式worker3752442；原监控继续60秒刷新，其他训练不中止。
+
+检测最大992/batch1、EMA驻留预检通过3次优化更新，loss26.8244/26.1867/56.7236（空GT）；peak4201.68MiB。第二步correspondence strength梯度.0006118非零，sampler shift有效，冻结projection/backbone无梯度，初始RGB恒等、更新后zeroIR恒等、encoder及decoder EMA hook归属、strict reload全部通过。完整runner smoke通过，峰值8036.22MiB（含初始化/加载峰值），仍在8.5GiB硬上限内；预检峰值不能替代完整runner峰值。正式8轮主实验已启动初始val400，完成后接续同预算8轮control，预训练完成不代表实际跨模态配准或检测收益。
