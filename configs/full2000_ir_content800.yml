@@ -1,0 +1,21 @@
+__include__:
+- ./ir_content800.yml
+output_dir: /home/fbohan/AIC/runs/full2000_ir_content800
+epochs: 8
+warmup_epochs: 1
+gradient_accumulation_steps: 4
+checkpoint_freq: 8
+inference_checkpoint_interval: 1
+train_dataloader:
+  total_batch_size: 2
+  num_workers: 2
+  dataset:
+    type: PairedIRCoco
+    archive: "/home/fbohan/AIC/\u521D\u8D5B\u6570\u636E\u96C6-\u9762\u5411\u57CE\u5E02\
+      \u573A\u666F\u7684\u591A\u6A21\u6001\u76EE\u6807\u68C0\u6D4B/\u8BAD\u7EC3\u96C6\
+      /AIC2026_Train_2000.zip"
+    training: true
+    size: 800
+    transforms: null
+    ann_file: /home/fbohan/AIC/data/annotations/train2000.json
+validate: false

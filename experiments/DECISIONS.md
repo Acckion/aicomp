@@ -540,3 +540,11 @@ GPU7本机物理GPU6独占自己的gpu6.lock；每进程8.5GiB上限，剩余>=9
 首次batch2最大992预检三步梯度有限、peak8330.70MiB，但当时EMA副本在反传前已释放，不能代表正式训练峰值。主动停止本任务尚在权重加载的smoke，未影响其他worker；两组统一改batch1累积8，保留等效batch8与优化步预算，并保留EMA驻留重测真实最大尺度。旧报告改名preflight_batch2_without_resident_ema.json，不作为正式放行依据。
 
 保留EMA的最终batch1最大992预检通过：三次真实更新loss26.4739/25.2166/55.9886，前两步IR neck梯度范数和3.2559/2.3217，缺失IR+空GT时neck梯度0符合有效性屏蔽；peakallocated4938.66MiB。冻结control neck无梯度，所有非空梯度有限，初始两组输出相等、EMA hook归属、严格回载、零IR恒等均通过。为降低SSHFS启动耗时，IRJoint的tuning loader仅将原始EMA权重缓存/dev/shm，以原文件resolve路径/字节数/mtime_ns校验，原始永久checkpoint仍在GPU6存储；训练控制与resume格式不变。
+
+## 2026-10-02：推广已验证IR内容对齐至2000全量
+
+用户建议将有效红外路线应用2000。采用已完成train1600/val400同预算对照的IRContentDFINE配方（55.1565 vs54.2069峰值，同epoch8+1.1258），不叠加门控、neck解冻或语言分支。以ft2000_aug800/weights_epoch_020.pth的原始EMA RGB权重起步，冻结同一IR-only epoch24 backbone/encoder，sampler输出零初始化，严格校验初始预测与2000 RGB父路径完全相同；不是将不同检测器输出/整套模型权重平均或拼接。官方train2000仅RGB+IR图、RGB坐标GT训练，batch2累积4等效8，800多尺度、暖启余弦调度、8轮，IR sampler lr3e-4、RGB主路径1e-5/骨干1e-6，其余与有效1600配方相同。
+
+全量包含原val400，所以validate:false，绝不把训练内AP当独立验证或用于选best；全量每轮保留EMA快照，无独立mAP。候选预先参考原1600峰值epoch7：1600版本7*200=1400步，2000版本每轮250步，第6轮1500步作为首选学习阶段参考、第7轮作按数据遍历轮次的备选；全程8轮供追溯。两个版本余弦调度长度不同，不称这两种参考严格等价，也不保证phase2收益或最佳轮次。phase2未进入训练或选择规则。
+
+GPU7服务器物理GPU3，自己的gpu3.lock与worker训练锁、余量>=9216MiB才运行、每进程8.5GiB限额；输出checkpoints/gpu6_storage/full2000_ir/runs而非根盘，controller2481862先真实预检→smoke→训练，其他实验不中止。最大992/batch2且EMA驻留预检通过三次优化更新，peakallocated6819.64MiB；初始原生RGB恒等、缺失IR恒等、空GT有限、sampler shift/output有效梯度、EMA hook归属及严格回载均通过。2000唯一图ID与validate:false已检查。plot_full2000_ir.py每60秒刷新loss、框回归loss、动态LR与实际批次，不伪造mAP曲线。
