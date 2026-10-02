@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('--name',choices=['scene_semantic_init800','scene_rgb_fastcontrol800','scene_obj365_reset800','scene_obj365_pool800','scene_obj365_pool800_twowheel'],required=True);p.add_argument('--gpu-index',type=int,required=True);p.add_argument('--resume');args=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('--name',choices=['scene_semantic_init800','scene_rgb_fastcontrol800','scene_obj365_reset800','scene_obj365_pool800','scene_obj365_pool800_twowheel','scene_obj365_pool800_airqueries'],required=True);p.add_argument('--gpu-index',type=int,required=True);p.add_argument('--resume');p.add_argument('--minimum-free-mib',type=int,default=7168);args=p.parse_args()
     OUT=ROOT/'experiments/scene_semantic_init'/args.name;OUT.mkdir(parents=True,exist_ok=True)
     signal.pthread_sigmask(signal.SIG_UNBLOCK, {signal.SIGTERM, signal.SIGINT})
     lock = (ROOT/f'experiments/mechanism_trials/gpu{args.gpu_index}.lock').open('a')
@@ -30,7 +30,7 @@ def main():
         nonlocal child
         while True:
             free = int(subprocess.check_output(['nvidia-smi','-i',str(args.gpu_index),'--query-gpu=memory.free','--format=csv,noheader,nounits'],text=True).strip())
-            if free >= 7168:
+            if free >= args.minimum_free_mib:
                 break
             status('waiting_memory', next_stage=stage, free_mib=free)
             time.sleep(15)
@@ -50,6 +50,11 @@ def main():
             assert json.loads((OUT/'preflight.json').read_text())['actual_updates'] == 3
             command += ['--resume',args.resume]
         else:
+            if args.name.endswith('_airqueries'):
+                run('coverage', [str(ROOT/'scripts/audit_air_query_coverage.py'), '--config',str(ROOT/'configs'/(args.name+'.yml')), '--output',str(OUT/'coverage')])
+                if not json.loads((OUT/'coverage/report.json').read_text())['launch_supported']:
+                    status('rejected_geometry_gate', run_name=args.name)
+                    return
             run('preflight', [str(ROOT/'scripts/scene_semantic_preflight.py'),'--name',args.name])
             assert json.loads((OUT/'preflight.json').read_text())['actual_updates'] == 3
             if args.name.startswith('scene_obj365_'):
