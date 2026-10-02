@@ -1,0 +1,36 @@
+__include__:
+- ./native_roi800.yml
+model: NativeGridDFINE
+output_dir: /home/fbohan/AIC/runs/native_grid1
+mechanism_imports:
+- extra_iou_metrics
+- native_grid
+NativeGridDFINE:
+  backbone: HGNetv2
+  encoder: HybridEncoder
+  decoder: DFINETransformer
+  size: 800
+  tile_size: 800
+  detail_enabled: true
+  grid_factor: 1
+epochs: 8
+gradient_accumulation_steps: 8
+gpu_memory_limit_gib: 8.5
+checkpoint_format: ema_inference
+inference_checkpoint_interval: 2
+smoke_steps: 8
+optimizer:
+  lr: 1.0e-05
+  params:
+  - params: ^detail_bridge[.]
+    lr: 0.0003
+  - params: ^(?=.*backbone)(?!.*(?:norm|bn)).*$
+    lr: 1.0e-06
+  - params: ^(?=.*(?:encoder|decoder))(?=.*(?:norm|bn)).*$
+    weight_decay: 0.0
+train_dataloader:
+  total_batch_size: 1
+  num_workers: 2
+val_dataloader:
+  total_batch_size: 1
+  num_workers: 2
