@@ -4,7 +4,10 @@ Same parameters and checkpoint layout as IRContentDFINE. The IR backbone stays
 frozen; BN statistics stay fixed. The control changes only neck trainability.
 """
 import torch
+import os
+from pathlib import Path
 from ir_content_alignment import IRContentDFINE
+import train_baseline as baseline
 from src.core import register
 from src.zoo.dfine.dfine import DFINE
 
@@ -39,3 +42,31 @@ class IRJointDFINE(IRContentDFINE):
             return DFINE.forward(self, x[:, :3], targets)
         finally:
             self._feature = None; self._valid = None
+
+
+_load_tuning = baseline.BaselineSolver.load_tuning_state
+
+
+def load_joint_parent(self, path):
+    if not isinstance(self.model, IRJointDFINE):
+        return _load_tuning(self, path)
+    # Retain the original checkpoint remotely; cache only its unmodified EMA
+    # weights so successive smoke/train/control starts do not reread optimizer
+    # state through SSHFS. A source signature prevents reuse after replacement.
+    source = Path(path)
+    signature = {'source': str(source.resolve()), 'bytes': source.stat().st_size,
+                 'mtime_ns': source.stat().st_mtime_ns}
+    cache = Path('/dev/shm/aicomp_ir_joint_parent.pth')
+    existing = torch.load(cache, map_location='cpu', weights_only=False) if cache.exists() else None
+    if existing is None or existing.get('source_signature') != signature:
+        checkpoint = torch.load(source, map_location='cpu', weights_only=False)
+        weights = checkpoint['ema']['module'] if 'ema' in checkpoint else checkpoint['model']
+        temporary = cache.with_suffix(f'.{os.getpid()}.tmp')
+        torch.save({'model': weights, 'source_signature': signature}, temporary)
+        temporary.replace(cache)
+        del checkpoint, weights
+    del existing
+    return _load_tuning(self, cache)
+
+
+baseline.BaselineSolver.load_tuning_state = load_joint_parent

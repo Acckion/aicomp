@@ -533,6 +533,10 @@ IR四条件完整val400探针已完成：real mAP55.1707、geometry_only54.0516�
 
 ## 2026-10-02：启动IR neck联合适配验证
 
-用户授权尝试。IRJointDFINE沿用IRContent全部参数名和内容相关位移/后三层decoder注入，仅增加adapt_ir_neck开关。实验解冻IR encoder（neck），IR backbone保持no_grad，IR两分支eval固定BN统计；控制组冻结neck。两个run同初始化ir_content800/best.pth、同seed20260929、train1600/val400、8轮、batch2累积4、800整图动态尺度、相同增强与调度。成熟采样器lr3e-5、IR neck lr3e-6（norm/bn不衰减）、RGB lr1e-5/骨干1e-6，两组仅neck梯度路径有别。不额外使用独立IR坐标框损失，不增加query，不拼接多个检测器输出，不同时改变早期候选交互。
+用户授权尝试。IRJointDFINE沿用IRContent全部参数名和内容相关位移/后三层decoder注入，仅增加adapt_ir_neck开关。实验解冻IR encoder（neck），IR backbone保持no_grad，IR两分支eval固定BN统计；控制组冻结neck。两个run同初始化ir_content800/best.pth、同seed20260929、train1600/val400、8轮、batch1累积8（等效batch8）、800整图动态尺度、相同增强与调度。成熟采样器lr3e-5、IR neck lr3e-6（norm/bn不衰减）、RGB lr1e-5/骨干1e-6，两组仅neck梯度路径有别。不额外使用独立IR坐标框损失，不增加query，不拼接多个检测器输出，不同时改变早期候选交互。
 
 GPU7本机物理GPU6独占自己的gpu6.lock；每进程8.5GiB上限，剩余>=9216MiB才开始预检。run_ir_joint.py持久controller先执行最大992/batch2真实梯度与optimizer更新预检，再smoke与正式训练8轮，再冻结neck同预算续训8轮；输出checkpoints/gpu6_storage/ir_joint/runs，通过runs同名链接，源代码不含数据/权重。预检验证neck非零有限梯度、骨干无梯度、控制neck无梯度、空GT+缺失模态有限、EMA hook归属、严格回载与缺失IR恒等；失败不放行正式训练。plot_ir_joint.py独立每60秒刷新mAP@50-95/AP75/AP90/小目标AP与loss。更早IR内容交互暂不和此实验同时叠加。
+
+首次batch2最大992预检三步梯度有限、peak8330.70MiB，但当时EMA副本在反传前已释放，不能代表正式训练峰值。主动停止本任务尚在权重加载的smoke，未影响其他worker；两组统一改batch1累积8，保留等效batch8与优化步预算，并保留EMA驻留重测真实最大尺度。旧报告改名preflight_batch2_without_resident_ema.json，不作为正式放行依据。
+
+保留EMA的最终batch1最大992预检通过：三次真实更新loss26.4739/25.2166/55.9886，前两步IR neck梯度范数和3.2559/2.3217，缺失IR+空GT时neck梯度0符合有效性屏蔽；peakallocated4938.66MiB。冻结control neck无梯度，所有非空梯度有限，初始两组输出相等、EMA hook归属、严格回载、零IR恒等均通过。为降低SSHFS启动耗时，IRJoint的tuning loader仅将原始EMA权重缓存/dev/shm，以原文件resolve路径/字节数/mtime_ns校验，原始永久checkpoint仍在GPU6存储；训练控制与resume格式不变。

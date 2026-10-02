@@ -26,7 +26,7 @@ def main():
     model = cfg.model.cuda(); model.load_state_dict(weights, strict=True)
     del weights, ckpt
     samples, targets = [], []
-    for i in [10, 11]:
+    for i in [10]:
         sample, target = dataset[i]; samples.append(sample)
         targets.append({k: v.cuda() if isinstance(v, torch.Tensor) else v for k, v in target.items()})
     x = torch.stack(samples).cuda(); model.eval()
@@ -39,7 +39,7 @@ def main():
         ema = deepcopy(model)
         for layer in ema.decoder.decoder.layers[-3:]:
             assert list(layer._forward_pre_hooks.values())[-1].__self__ is ema
-        del ema
+        # Keep EMA resident throughout training checks, matching the solver.
     criterion = cfg.criterion.cuda(); optimizer = cfg.optimizer
     trainable = {id(p) for p in model.parameters() if p.requires_grad}
     grouped = [id(p) for g in optimizer.param_groups for p in g['params']]
@@ -89,7 +89,7 @@ def main():
               'train_val_disjoint': True, 'ema_hook_owner_correct': True,
               'strict_reload_passed': True, 'zero_ir_exact': True,
               'control_neck_gradient_absent': True, 'frozen_backbone_gradient_absent': True,
-              'max_scale': 992, 'batch_size': 2, 'optimizer_steps': records,
+              'max_scale': 992, 'batch_size': 1, 'ema_resident': True, 'optimizer_steps': records,
               'peak_allocated_mib': torch.cuda.max_memory_allocated() / 1024**2}
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / 'preflight.json').write_text(json.dumps(report, indent=2))

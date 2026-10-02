@@ -7,7 +7,7 @@ mechanism_imports:
 - ir_joint_adaptation
 epochs: 8
 warmup_epochs: 1
-gradient_accumulation_steps: 4
+gradient_accumulation_steps: 8
 checkpoint_freq: 8
 inference_checkpoint_interval: 2
 optimizer:
@@ -25,7 +25,7 @@ optimizer:
   - params: ^(?:encoder|decoder)\.(?=.*(?:norm|bn)).*$
     weight_decay: 0.0
 train_dataloader:
-  total_batch_size: 2
+  total_batch_size: 1
   num_workers: 2
   dataset:
     type: PairedIRCoco
