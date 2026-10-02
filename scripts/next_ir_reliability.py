@@ -38,7 +38,7 @@ class ReliabilitySampler(ContentSampler):
             # This measures local feature variation, not calibrated IR quality.
             mean = (patches * weights.unsqueeze(-1)).sum(2)
             variance = ((patches - mean.unsqueeze(2)).square() * weights.unsqueeze(-1)).sum(2).mean(-1)
-            contrast = variance.sqrt() / (mean.abs().mean(-1) + 1e-6)
+            contrast = variance.clamp_min(1e-8).sqrt() / (mean.abs().mean(-1) + 1e-6)
             evidence = torch.stack([best, 1 - entropy, support, contrast.clamp(max=5) / 5], -1)
             gate = self.reliability(evidence).sigmoid() * (support > 0).unsqueeze(-1)
             self.last_diagnostics = {'gate_mean': gate.detach().mean(), 'support_mean': support.detach().mean()}

@@ -17,6 +17,7 @@ PYTHON = '/home/fbohan/miniconda3/envs/AICOMP/bin/python'
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--direction', choices=['ir', 'roi'], required=True)
+    parser.add_argument('--start-independent', action='store_true', help='Start from the fixed parent without waiting for GPU7 results')
     args = parser.parse_args()
     ir = args.direction == 'ir'
     gpu = 4 if ir else 2
@@ -54,11 +55,14 @@ def main():
                 break
             status('waiting_for_remote_setup', missing=missing); time.sleep(15)
         ready = ROOT / 'migration/upstream' / (args.direction + '.ready.json')
-        while not ready.exists():
+        while not args.start_independent and not ready.exists():
             status('waiting_for_gpu7_prerequisites'); time.sleep(15)
-        upstream = json.loads(ready.read_text())
-        assert upstream['stage'] == 'complete' and upstream['direction'] == args.direction
-        device_lock = (ROOT / 'experiments/mechanism_trials' / f'gpu{gpu}.lock').open('a')
+        if not args.start_independent:
+            upstream = json.loads(ready.read_text())
+            assert upstream['stage'] == 'complete' and upstream['direction'] == args.direction
+        lock_dir = ROOT / 'experiments/mechanism_trials'
+        lock_dir.mkdir(parents=True, exist_ok=True)
+        device_lock = (lock_dir / f'gpu{gpu}.lock').open('a')
         while True:
             try:
                 fcntl.flock(device_lock, fcntl.LOCK_EX | fcntl.LOCK_NB); break

@@ -510,3 +510,9 @@ GPU8 222.20.97.217 SSH已成功，卡4剩余约18.1GiB、卡2约9.8GiB，均共�
 - 局部覆盖roi_coverage800在迁移核实时已自动开训，因此保留该GPU7 GPU1活跃worker，不重复重训。只暂停它的旧controller后续派发，roi_coverage_control800八轮改在GPU8物理GPU2。publisher看到活跃训练COMPLETE后，对经过UID/cmd核验的暂停controller先挂起TERM再CONT，避免旧队列重复启动control；此后写远端roi.ready.json。EMA inference权重不能恢复当前优化器，因此不把中途迁移称为等价续训。
 
 run_gpu8_successors.py两个远端持久controller已启动（当前等待setup/前置任务，不称为实际训练）；finish_gpu8_migration.py后台监督复制和最终校验，失败不放行；publish_gpu8_prerequisites.py独立发布完成前提。输出仍各8.5GiB硬上限，GPU8显存不足时等待。GPU7本轮Grounding、HTI、IR对照和局部覆盖继续运行。三个远端run通过GPU7 runs同名符号链接进入原每60秒监控；旧GPU6空ROI control链接改名保存，未删数据。
+
+## 2026-10-02：取消GPU8后续任务的结果等待，独立提前开训
+
+用户询问为何等待并要求提前开始。旧等待是先看旧对照再投入的资源策略，并非技术依赖；两个新任务均固定同一个RGB父权重，数据/环境已完整校验，因此新增--start-independent跳过GPU7结果前提，其余setup验证、GPU锁、余量检查和真实预检保留。GPU8 card2 roi_coverage_control800已经正式第1轮完成3次优化，loss28.2132、峰值allocated7199MiB；GPU7当前roi_coverage800不受影响。GPU8 card4 ir_reliability800最大992、batch2、空GT三次真实反传已通过，peakallocated7630MiB，正在smoke/正式启动阶段；后续gate-off对照仍同卡顺序运行。
+
+首次启动暴露GPU8新目录缺少experiments/mechanism_trials锁目录，已修复创建；IR预检首次发现缺失IR时局部variance=0的sqrt导数导致非有限梯度，未跳过断言。将variance在sqrt前clamp_min(1e-8)，新增混合有效/缺失IR零初始化CPU backward检查有限，重测真实GPU三个step loss27.4459/27.4672/108.7675、门控非零梯度、置零IR恒等、EMA归属和严格回载全部通过；失败日志保留。此为数值稳定性修复，不将其说成性能增益。
