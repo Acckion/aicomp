@@ -1,0 +1,5 @@
+__include__: ['./scene_whole_encoder_real.yml']
+output_dir: /home/fbohan/AIC/runs/scene_whole_encoder_sham
+summary_dir: /home/fbohan/AIC/experiments/whole_frame_head/scene_whole_encoder_sham/summary
+WholeFrameHeadDFINE:
+  mode: sham

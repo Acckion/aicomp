@@ -16,6 +16,7 @@ ROOT=Path(__file__).resolve().parents[1]
 
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--name',required=True)
+    parser.add_argument('--max-gt',action='store_true',help='Use the training image with the most annotated objects')
     args=parser.parse_args();torch.set_num_threads(2);torch.manual_seed(20260929)
     cfg=YAMLConfig(str(ROOT/'configs'/f'{args.name}.yml'))
     cap=float(cfg.yaml_cfg['gpu_memory_limit_gib'])
@@ -23,7 +24,8 @@ def main():
     dataset=cfg.train_dataloader.dataset
     assert len(dataset)==1610 and len(cfg.val_dataloader.dataset)==390
     assert set(dataset.ids).isdisjoint(cfg.val_dataloader.dataset.ids)
-    idx=dataset.ids.index(1537)
+    image_id=max(dataset.ids,key=lambda iid:len(dataset.coco.imgToAnns[iid])) if args.max_gt else 1537
+    idx=dataset.ids.index(image_id)
     packed,targets=cfg.train_dataloader.collate_fn([dataset[idx]])
     packed=packed.cuda();targets=[{k:v.cuda() if isinstance(v,torch.Tensor) else v for k,v in t.items()} for t in targets]
     model=cfg.model
@@ -33,8 +35,11 @@ def main():
     ema=deepcopy(model).eval()
     criterion=cfg.criterion.cuda();optimizer=cfg.optimizer
     assert all(not p.requires_grad for p in model.backbone.parameters())
-    assert all(not p.requires_grad for p in model.encoder.parameters())
-    before={k:v.detach().cpu().clone() for k,v in model.state_dict().items() if k.startswith(('backbone.','encoder.'))}
+    assert all(p.requires_grad == model.train_encoder for p in model.encoder.parameters())
+    before={k:v.detach().cpu().clone() for k,v in model.state_dict().items()
+            if k.startswith('backbone.') or (k.startswith('encoder.') and
+            (not model.train_encoder or k.endswith(('running_mean','running_var','num_batches_tracked'))))}
+    encoder_before={k:v.detach().cpu().clone() for k,v in model.encoder.named_parameters()}
     # The two arms become identical when actual original pixels are replaced
     # by exactly the sham reconstruction. This checks packing and geometry.
     h,w=map(int,packed[0,6,0,:2].cpu().tolist());synthetic=packed.clone()
@@ -59,12 +64,18 @@ def main():
         scaler.scale(loss).backward();scaler.unscale_(optimizer)
         assert all(torch.isfinite(p.grad).all() for p in model.parameters() if p.grad is not None)
         assert all(p.grad is None for p in model.backbone.parameters())
-        assert all(p.grad is None for p in model.encoder.parameters())
+        if model.train_encoder:
+            encoder_grads=[p.grad for p in model.encoder.parameters() if p.grad is not None]
+            assert encoder_grads and any(g.abs().sum()>0 for g in encoder_grads)
+        else:
+            assert all(p.grad is None for p in model.encoder.parameters())
         grads=[p.grad for p in model.decoder.parameters() if p.grad is not None]
         assert grads and any(g.abs().sum()>0 for g in grads)
         torch.nn.utils.clip_grad_norm_(model.parameters(),.1);scaler.step(optimizer);scaler.update()
         records.append({'step':step+1,'loss':float(loss.detach()),'empty_gt':step==2})
     assert all(torch.equal(value,model.state_dict()[key].cpu()) for key,value in before.items())
+    encoder_changed=any(not torch.equal(encoder_before[k],v.detach().cpu()) for k,v in model.encoder.named_parameters())
+    assert encoder_changed == model.train_encoder
     model.eval();ema.load_state_dict(model.state_dict(),strict=True)
     with torch.no_grad(),torch.autocast('cuda',dtype=torch.float16):
         expected=model(packed);other=ema(packed)
@@ -78,12 +89,16 @@ def main():
         assert torch.equal(expected['pred_boxes'],other['pred_boxes'])
         assert torch.equal(expected['pred_logits'],other['pred_logits'])
     report={'stage':'passed','name':args.name,'mode':mode,'train_gt':len(targets[0]['labels']),
+        'image_id':image_id,'maximum_annotation_count_test':args.max_gt,
         'geometry':[model.height,model.width],'records':records,'ema_resident':True,
-        'frozen_visual_state_exact':True,'strict_reload_exact':True,'sham_reconstruction_identity_exact':True,
+        'train_encoder':model.train_encoder,'encoder_parameters_changed':encoder_changed,
+        'frozen_backbone_and_running_stats_exact':True,
+        'frozen_visual_state_exact':not model.train_encoder,'strict_reload_exact':True,'sham_reconstruction_identity_exact':True,
         'memory_cap_gib':cap,'peak_allocated_mib':torch.cuda.max_memory_allocated()/1024**2,
-        'limitations':'One dense training image and three actual updates; no AP or online claim.'}
+        'limitations':'One selected training image and three actual updates; no AP or online claim.'}
     out=ROOT/'experiments/whole_frame_head'/args.name;out.mkdir(parents=True,exist_ok=True)
-    (out/'preflight.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report),flush=True)
+    filename='preflight_max_gt.json' if args.max_gt else 'preflight.json'
+    (out/filename).write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report),flush=True)
 
 
 if __name__=='__main__':main()

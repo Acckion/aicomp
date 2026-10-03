@@ -1,0 +1,15 @@
+__include__: ['./scene_whole_head_real.yml']
+output_dir: /home/fbohan/AIC/runs/scene_whole_encoder_real
+summary_dir: /home/fbohan/AIC/experiments/whole_frame_head/scene_whole_encoder_real/summary
+WholeFrameHeadDFINE:
+  train_encoder: true
+gpu_memory_limit_gib: 4.2
+optimizer:
+  params:
+    - params: '^(?=.*encoder)(?=.*(?:norm|bn)).*$'
+      lr: 0.00001
+      weight_decay: 0.0
+    - params: '^(?=.*encoder)(?!.*(?:norm|bn)).*$'
+      lr: 0.00001
+    - params: '^(?=.*decoder)(?=.*(?:norm|bn)).*$'
+      weight_decay: 0.0

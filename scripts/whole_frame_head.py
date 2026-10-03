@@ -15,13 +15,14 @@ class WholeFrameHeadDFINE(DFINE):
     inference_input_protocol = 'whole_frame_head_rgb7_1088x1920_v1'
 
     def __init__(self, backbone, encoder, decoder, mode='real', size=800,
-                 height=1088, width=1920):
+                 height=1088, width=1920, train_encoder=False):
         super().__init__(backbone,encoder,decoder)
         assert mode in ('real','sham')
         self.mode=mode;self.size=size;self.height=height;self.width=width
+        self.train_encoder=bool(train_encoder)
         self.forced_size=None
         self.backbone.requires_grad_(False)
-        self.encoder.requires_grad_(False)
+        self.encoder.requires_grad_(self.train_encoder)
         self.encoder.eval_spatial_size=None
         self.decoder.eval_spatial_size=None
 
@@ -47,5 +48,10 @@ class WholeFrameHeadDFINE(DFINE):
         assert packed.shape[1]==7
         self.backbone.eval();self.encoder.eval()
         with torch.no_grad():
-            features=self.encoder(self.backbone(self.frame(packed)))
+            features=self.backbone(self.frame(packed))
+        if self.train_encoder:
+            features=self.encoder(features)
+        else:
+            with torch.no_grad():
+                features=self.encoder(features)
         return self.decoder(features,targets)
