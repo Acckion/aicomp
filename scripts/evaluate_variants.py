@@ -95,6 +95,7 @@ def main():
     ap.add_argument('--backend',choices=['dfine','deimv2'],default='dfine')
     ap.add_argument('--amp',action='store_true',help='Use the same CUDA float16 inference precision as training validation')
     ap.add_argument('--native-top100',action='store_true',help='Native single-view top100 before clipping; no refill from top300')
+    ap.add_argument('--native-detail-mode',choices=['real','zero','shuffle'],default='real',help='Native encoded-detail causal ablation; same trained checkpoint')
     ap.add_argument('--require-ema',action='store_true',help='Reject weights without verified EMA metadata')
     ap.add_argument('--flip-tta',action='store_true');ap.add_argument('--expanded-soft',action='store_true');ap.add_argument('--tile',type=float,default=0);ap.add_argument('--output',required=True);ap.add_argument('--limit',type=int,default=0)
     ap.add_argument('--annotations',default=str(ROOT/'data/annotations/val400.json'))
@@ -138,7 +139,12 @@ def main():
         if mechanism_hashes:identity['mechanism_source_sha256']=mechanism_hashes
         if config.yaml_cfg.get('model') == 'NativeEncodedDeltaDFINE':
             identity['input_protocol']='native_rgb7_pil_bilinear_base_v1'
+            identity['native_detail_mode']=args.native_detail_mode
+            if args.native_detail_mode=='shuffle':identity['native_shuffle_seed']=20260929
+        else:
+            assert args.native_detail_mode=='real','Detail ablation requires NativeEncodedDeltaDFINE'
         identity['resolved_model_config_sha256'] = hashlib.sha256(json.dumps(config.yaml_cfg,sort_keys=True,default=str).encode()).hexdigest()
+    assert args.native_detail_mode=='real' or identity.get('input_protocol')=='native_rgb7_pil_bilinear_base_v1'
     manifest=out/'cache_identity.json'
     if cache.exists():
         assert manifest.exists() and json.loads(manifest.read_text())==identity,'Stale prediction cache; use a new output directory'
@@ -148,6 +154,8 @@ def main():
         torch.cuda.set_per_process_memory_fraction(args.gpu_memory_limit_gib*1024**3/torch.cuda.get_device_properties(0).total_memory,0)
         cfg=ConfigType(args.config or str(ROOT/'configs/rgb1600.yml'),eval_spatial_size=[args.size,args.size])
         model=cfg.model
+        if hasattr(model,'inference_input_protocol'):
+            model.detail_mode=args.native_detail_mode
         state=torch.load(args.checkpoint,map_location='cpu',weights_only=False)
         if args.require_ema:
             assert 'ema' in state or state.get('source')=='EMA', 'EMA source could not be verified'
