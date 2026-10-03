@@ -13,6 +13,7 @@ OUT=ROOT/'experiments/phase2_obj365_pool_e40'
 RUN=ROOT/'runs/full2000_obj365_pool800_b2'
 AUDIT=ROOT/'experiments/taxonomy_submission_audit_e10/report.json'
 SHADOW=ROOT/'checkpoints/gpu8_storage/runs'
+CONFIG=ROOT/'configs/full2000_obj365_pool800_b2.yml'
 
 
 def records(path):
@@ -84,7 +85,7 @@ def main():
         except BlockingIOError:status('waiting_project_gpu')
         time.sleep(30)
     command=[sys.executable,'-u',str(ROOT/'scripts/evaluate_variants.py'),
-        '--checkpoint',str(checkpoint),'--config',str(ROOT/'configs/full2000_obj365_pool800_b2.yml'),
+        '--checkpoint',str(checkpoint),'--config',str(CONFIG),
         '--annotations',str(ROOT/'data/phase2/images.json'),'--image-root',str(ROOT/'data/phase2'),
         '--size','800','--amp','--native-top100','--require-ema','--method','none',
         '--predict-only','--gpu-memory-limit-gib','2','--output',str(OUT/'prediction')]
