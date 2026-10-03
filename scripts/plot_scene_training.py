@@ -48,6 +48,27 @@ def evidence(all_rows):
                 report[title+'_mean_delta'] = statistics.mean(100*(a[e]['validation']['coco_eval_bbox'][index]-b[e]['validation']['coco_eval_bbox'][index]) for e in window)
             report['per_class_mean_delta'] = {name:{'delta':statistics.mean(100*(a[e]['validation']['per_class_ap'][name]-b[e]['validation']['per_class_ap'][name]) for e in window),
                                                      'gt_count':count,'sparse':count<20} for name,count in name_counts.items()}
+        # The official twelve-class macro remains primary. These decompositions
+        # expose sensitivity to sparse classes, never remove them from scoring.
+        report['support_sensitivity'] = {}
+        post_warmup = [e for e in common if e > 3]
+        sparse = [name for name,count in name_counts.items() if count < 20]
+        supported = [name for name,count in name_counts.items() if count >= 20]
+        for width in [3,5,10]:
+            epochs = post_warmup[-width:]
+            if len(epochs) < width:
+                continue
+            delta = {name:statistics.mean(100*(a[e]['validation']['per_class_ap'][name]
+                -b[e]['validation']['per_class_ap'][name]) for e in epochs) for name in name_counts}
+            report['support_sensitivity'][str(width)] = {
+                'epochs':epochs,
+                'official_map_mean_delta':statistics.mean(100*(a[e]['validation']['coco_eval_bbox'][0]
+                    -b[e]['validation']['coco_eval_bbox'][0]) for e in epochs),
+                'supported_class_macro_delta':statistics.mean(delta[name] for name in supported) if supported else None,
+                'sparse_class_contribution_to_official_macro':sum(delta[name] for name in sparse)/len(name_counts),
+                'sparse_class_deltas':{name:delta[name] for name in sparse},
+                'positive_classes':sum(value>0 for value in delta.values()),
+                'note':'Descriptive, same seed and fold; class exclusion is not official scoring or submission eligibility.'}
         summary['paired'][main+' vs '+control] = report
     tmp = OUT / f'evidence.{os.getpid()}.tmp'
     tmp.write_text(json.dumps(summary,indent=2))
