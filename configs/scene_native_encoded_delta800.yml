@@ -1,0 +1,56 @@
+__include__: ['./scene_obj365_pool800.yml']
+model: NativeEncodedDeltaDFINE
+output_dir: /home/fbohan/AIC/runs/scene_native_encoded_delta800
+summary_dir: /home/fbohan/AIC/experiments/native_encoded/scene_native_encoded_delta800/summary
+mechanism_imports: [extra_iou_metrics, taxonomy_pooling, native_encoded_delta]
+NativeEncodedDeltaDFINE:
+  backbone: HGNetv2
+  encoder: HybridEncoder
+  decoder: DFINETransformer
+  size: 800
+  tile_size: 800
+  detail_enabled: true
+  residual_bound: 0.25
+epochs: 8
+warmup_epochs: 1
+gradient_accumulation_steps: 8
+gpu_memory_limit_gib: 4.5
+checkpoint_freq: 8
+checkpoint_format: full
+save_epoch_training_states: false
+inference_checkpoint_interval: 1
+smoke_steps: 8
+optimizer:
+  lr: 0.00001
+  params:
+    - params: '^delta_bridge[.]'
+      lr: 0.0003
+    - params: '^(?=.*backbone)(?!.*(?:norm|bn)).*$'
+      lr: 0.000001
+    - params: '^(?=.*(?:encoder|decoder))(?=.*(?:norm|bn)).*$'
+      weight_decay: 0.0
+train_dataloader:
+  total_batch_size: 1
+  num_workers: 2
+  dataset:
+    type: NativeRGBCoco
+    ann_file: /home/fbohan/AIC/data/annotations/scene_train.json
+    training: true
+    size: 800
+    transforms: null
+  collate_fn:
+    type: NativeRGBCollate
+    base_size: 800
+    stop_epoch: 8
+val_dataloader:
+  total_batch_size: 1
+  num_workers: 2
+  dataset:
+    type: NativeRGBCoco
+    ann_file: /home/fbohan/AIC/data/annotations/scene_val.json
+    training: false
+    size: 800
+    transforms: null
+  collate_fn:
+    type: NativeRGBCollate
+    base_size: 800

@@ -1,0 +1,6 @@
+__include__: ['./scene_native_encoded_delta800.yml']
+output_dir: /home/fbohan/AIC/runs/scene_native_encoded_control800
+summary_dir: /home/fbohan/AIC/experiments/native_encoded/scene_native_encoded_control800/summary
+gpu_memory_limit_gib: 4.0
+NativeEncodedDeltaDFINE:
+  detail_enabled: false
