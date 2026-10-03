@@ -4,7 +4,7 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 
 def main():
- p=argparse.ArgumentParser();p.add_argument('--name',choices=['scene_native_encoded_delta800','scene_native_encoded_control800'],required=True)
+ p=argparse.ArgumentParser();p.add_argument('--name',choices=['scene_native_encoded_delta800','scene_native_encoded_control800','scene_native_routed_delta800'],required=True)
  p.add_argument('--gpu-index',type=int,required=True);p.add_argument('--peer-pid',type=int,required=True);p.add_argument('--peer-config',required=True)
  p.add_argument('--output-target',required=True);a=p.parse_args()
  out=ROOT/'experiments/native_encoded'/a.name;out.mkdir(parents=True,exist_ok=True)
@@ -44,7 +44,7 @@ def main():
   if code:raise RuntimeError(f'{stage} failed ({code}); no blind restart')
  signal.signal(signal.SIGTERM,lambda n,f:sys.exit(128+n));signal.signal(signal.SIGINT,lambda n,f:sys.exit(128+n))
  try:
-  manifest={'parent_checkpoint':str(checkpoint.resolve()),'sha256':hashlib.file_digest(checkpoint.open('rb'),'sha256').hexdigest(),'parent_training_epochs':20,'train_annotation_sha256':hashlib.sha256(Path(config['train_dataloader']['dataset']['ann_file']).read_bytes()).hexdigest(),'validation_annotation_sha256':hashlib.sha256(Path(config['val_dataloader']['dataset']['ann_file']).read_bytes()).hexdigest(),'train_images':1610,'validation_images':390,'epochs':8,'batch':1,'accumulation':8,'validation_is_not_phase2':True,'comparison':'Same packed RGB augmentation, schedule and initialization; residual disabled in control. Allocation caps differ only for device headroom.','rules':'Official training images only; one detector, no box voting or test fitting.'}
+  manifest={'parent_checkpoint':str(checkpoint.resolve()),'sha256':hashlib.file_digest(checkpoint.open('rb'),'sha256').hexdigest(),'parent_training_epochs':20,'train_annotation_sha256':hashlib.sha256(Path(config['train_dataloader']['dataset']['ann_file']).read_bytes()).hexdigest(),'validation_annotation_sha256':hashlib.sha256(Path(config['val_dataloader']['dataset']['ann_file']).read_bytes()).hexdigest(),'train_images':1610,'validation_images':390,'epochs':8,'batch':1,'accumulation':8,'region_fraction':config['NativeEncodedDeltaDFINE'].get('region_fraction',.6),'routing_enabled':config['NativeEncodedDeltaDFINE'].get('routing_enabled',False),'validation_is_not_phase2':True,'comparison':'Same packed RGB augmentation, schedule and initialization; residual disabled in control. Allocation caps differ only for device headroom.','rules':'Official training images only; one detector, no box voting or test fitting.'}
   (out/'manifest.json').write_text(json.dumps(manifest,indent=2))
   launch('smoke',['--smoke']);launch('training',['--evaluate-init'])
   assert (run/'COMPLETE').exists();status('complete')

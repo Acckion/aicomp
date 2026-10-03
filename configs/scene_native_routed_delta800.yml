@@ -1,0 +1,8 @@
+__include__: ['./scene_native_encoded_delta800.yml']
+output_dir: /home/fbohan/AIC/runs/scene_native_routed_delta800
+summary_dir: /home/fbohan/AIC/experiments/native_encoded/scene_native_routed_delta800/summary
+mechanism_imports: [extra_iou_metrics, taxonomy_pooling, native_encoded_delta, native_crop_routing]
+NativeEncodedDeltaDFINE:
+  region_fraction: 0.3
+  routing_enabled: true
+gpu_memory_limit_gib: 4.4

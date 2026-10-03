@@ -5,10 +5,11 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 ROOT=Path(__file__).resolve().parents[1];OUT=ROOT/'monitoring/native_encoded'
-NAMES=['scene_native_encoded_delta800','scene_native_encoded_control800']
+NAMES=['scene_native_encoded_delta800','scene_native_encoded_control800','scene_native_routed_delta800']
+LABELS={NAMES[0]:'Fixed .6 regions',NAMES[1]:'Continuation control',NAMES[2]:'Routed .3 regions'}
 
 def refresh():
- runs={};evidence={'updated_at':time.strftime('%F %T'),'parent_epoch':20,'validation':'Independent grouped390; not phase2','runs':{},'paired':None,'limitations':'Only same continuation epochs are comparable. Two allocation caps do not change the recipe. Initialization is epoch0; epoch1 is warmup. Small class counts can move macro AP.'}
+ runs={};evidence={'updated_at':time.strftime('%F %T'),'parent_epoch':20,'validation':'Independent grouped390; not phase2','runs':{},'paired':None,'paired_by_run':{},'limitations':'Only same continuation epochs are comparable. Allocation caps do not change the recipe. Initialization is epoch0; epoch1 is warmup. Small class counts can move macro AP.'}
  for n in NAMES:
   path=ROOT/'runs'/n;rows=[]
   if (path/'initial_metrics.json').exists():rows.append({'epoch':0,'validation':json.loads((path/'initial_metrics.json').read_text())})
@@ -18,13 +19,17 @@ def refresh():
     except json.JSONDecodeError:pass
   runs[n]=rows;complete=[r for r in rows if r['epoch']>0]
   evidence['runs'][n]={'completed_epochs':complete[-1]['epoch'] if complete else 0,'map':100*rows[-1]['validation']['coco_eval_bbox'][0] if rows else None}
- a={r['epoch']:r for r in runs[NAMES[0]] if r['epoch']>=2};b={r['epoch']:r for r in runs[NAMES[1]] if r['epoch']>=2};common=sorted(a.keys()&b.keys())[-3:]
- if len(common)==3:
-  ds=[100*(a[e]['validation']['coco_eval_bbox'][0]-b[e]['validation']['coco_eval_bbox'][0]) for e in common]
-  evidence['paired']={'epochs':common,'map_deltas':ds,'mean_map_delta':sum(ds)/3,'status':'Descriptive matched comparison, no automatic promotion'}
+ b={r['epoch']:r for r in runs[NAMES[1]] if r['epoch']>=2}
+ for name in [NAMES[0],NAMES[2]]:
+  a={r['epoch']:r for r in runs[name] if r['epoch']>=2};common=sorted(a.keys()&b.keys())[-3:]
+  if len(common)==3:
+   ds=[100*(a[e]['validation']['coco_eval_bbox'][0]-b[e]['validation']['coco_eval_bbox'][0]) for e in common]
+   comparison={'epochs':common,'map_deltas':ds,'mean_map_delta':sum(ds)/3,'status':'Descriptive matched comparison, no automatic promotion'}
+   evidence['paired_by_run'][name]=comparison
+   if name==NAMES[0]:evidence['paired']=comparison
  fig,axes=plt.subplots(2,3,figsize=(14,8))
  for n,rows in runs.items():
-  label='Encoded detail' if n==NAMES[0] else 'Continuation control'
+  label=LABELS[n]
   for ax,index,title in zip(list(axes.flat)[:5],[0,1,2,3,None],['mAP@50-95','AP50','AP75','Small AP','AP90']):
    if index is None:
     pairs=[(r['epoch'],100*r['validation']['ap_by_iou']['0.90']) for r in rows if r['validation'].get('ap_by_iou',{}).get('0.90') is not None]

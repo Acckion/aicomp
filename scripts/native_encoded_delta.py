@@ -32,21 +32,24 @@ class NativeEncodedDeltaDFINE(DFINE):
         return packed
 
     def __init__(self, backbone, encoder, decoder, size=800, tile_size=800,
-                 detail_enabled=True, residual_bound=.25):
+                 detail_enabled=True, residual_bound=.25, region_fraction=.6,
+                 routing_enabled=False):
         super().__init__(backbone,encoder,decoder)
         self.size=size;self.tile_size=tile_size;self.detail_enabled=detail_enabled
         self.residual_bound=residual_bound;self.forced_size=None;self.detail_mode='real'
+        assert 0 < region_fraction <= 1
+        self.region_fraction=region_fraction;self.routing_enabled=routing_enabled
         self.delta_bridge=nn.Conv2d(encoder.hidden_dim,encoder.hidden_dim,1,bias=False)
         nn.init.zeros_(self.delta_bridge.weight)
         self.encoder.eval_spatial_size=None;self.decoder.eval_spatial_size=None
 
-    def regional_delta(self,packed,shape):
+    def regional_delta(self,packed,shape,windows=None):
         flags=[(m,m.training) for root in [self.backbone,self.encoder] for m in root.modules()]
         self.backbone.eval();self.encoder.eval()
         maps=[]
         try:
             with torch.no_grad():
-                for image in packed:
+                for index,image in enumerate(packed):
                     h,w=map(int,image[6,0,:2].detach().cpu().tolist())
                     assert h>0 and w>0
                     # The global view already has at least the original pixel
@@ -59,21 +62,22 @@ class NativeEncodedDeltaDFINE(DFINE):
                     original=image[None,3:6,:h,:w]
                     low=F.interpolate(image[None,:3,:self.size,:self.size],size=(h,w),mode='bilinear',align_corners=False)
                     if self.detail_mode=='low':original=low
-                    crop_h,crop_w=round(h*.6),round(w*.6)
+                    crop_h,crop_w=round(h*self.region_fraction),round(w*self.region_fraction)
+                    rectangles=[(x,y,x+crop_w,y+crop_h) for y in (0,h-crop_h) for x in (0,w-crop_w)] if windows is None else [(round(a*w),round(b*h),round(c*w),round(d*h)) for a,b,c,d in windows[index]]
                     assembled=image.new_zeros((1,self.encoder.hidden_dim,*shape))
                     coverage=image.new_zeros((1,1,*shape))
-                    for y in (0,h-crop_h):
-                        for x in (0,w-crop_w):
-                            def encode(source):
-                                tile=F.interpolate(source[:,:,y:y+crop_h,x:x+crop_w],size=(self.tile_size,self.tile_size),mode='bilinear',align_corners=False)
-                                return self.encoder(self.backbone(tile))[0]
-                            actual=encode(original).float();sham=encode(low).float()
-                            delta=actual-sham
-                            ch,cw=shape;ya,yb=round(y/h*ch),round((y+crop_h)/h*ch);xa,xb=round(x/w*cw),round((x+crop_w)/w*cw)
-                            assembled[:,:,ya:yb,xa:xb]+=F.interpolate(delta,size=(yb-ya,xb-xa),mode='bilinear',align_corners=False)
-                            coverage[:,:,ya:yb,xa:xb]+=1
-                    assert (coverage>0).all()
-                    assembled=assembled/coverage
+                    for x,y,x2,y2 in rectangles:
+                        crop_h,crop_w=y2-y,x2-x
+                        def encode(source):
+                            tile=F.interpolate(source[:,:,y:y+crop_h,x:x+crop_w],size=(self.tile_size,self.tile_size),mode='bilinear',align_corners=False)
+                            return self.encoder(self.backbone(tile))[0]
+                        actual=encode(original).float();sham=encode(low).float()
+                        delta=actual-sham
+                        ch,cw=shape;ya,yb=round(y/h*ch),round((y+crop_h)/h*ch);xa,xb=round(x/w*cw),round((x+crop_w)/w*cw)
+                        assembled[:,:,ya:yb,xa:xb]+=F.interpolate(delta,size=(yb-ya,xb-xa),mode='bilinear',align_corners=False)
+                        coverage[:,:,ya:yb,xa:xb]+=1
+                    if windows is None and self.region_fraction>=.5:assert (coverage>0).all()
+                    assembled=assembled/coverage.clamp_min(1)
                     if self.detail_mode=='zero':assembled=torch.zeros_like(assembled)
                     if self.detail_mode=='shuffle':
                         flat=assembled.flatten(2);assembled=flat[:,:,torch.randperm(flat.shape[-1],device=flat.device)].reshape_as(assembled)
@@ -92,7 +96,15 @@ class NativeEncodedDeltaDFINE(DFINE):
         if active!=self.size:rgb=F.interpolate(rgb,size=(active,active),mode='bilinear',align_corners=False)
         features=list(self.encoder(self.backbone(rgb)))
         if self.detail_enabled:
-            delta=self.regional_delta(packed,features[0].shape[-2:])
+            windows=None
+            if self.routing_enabled:
+                from native_crop_routing import encoder_candidates,select_windows
+                # Routing precedes the trainable decoder. FP32 prevents a
+                # no-grad AMP cast from poisoning its later gradient cache.
+                with torch.no_grad(),torch.autocast(device_type=features[0].device.type,enabled=False):
+                    boxes,scores=encoder_candidates(self.decoder,[v.detach().float() for v in features])
+                    windows=[select_windows(b,s,self.region_fraction) for b,s in zip(boxes,scores)]
+            delta=self.regional_delta(packed,features[0].shape[-2:],windows)
             residual=self.delta_bridge(delta)
             # Bound perturbation relative to each image's mature feature scale.
             scale=features[0].detach().float().square().mean((1,2,3),keepdim=True).sqrt().clamp_min(1e-6)
