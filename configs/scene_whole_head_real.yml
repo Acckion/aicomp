@@ -1,0 +1,19 @@
+__include__: ['./scene_native_encoded_delta800.yml']
+model: WholeFrameHeadDFINE
+output_dir: /home/fbohan/AIC/runs/scene_whole_head_real
+summary_dir: /home/fbohan/AIC/experiments/whole_frame_head/scene_whole_head_real/summary
+mechanism_imports: [extra_iou_metrics, taxonomy_pooling, whole_frame_head]
+WholeFrameHeadDFINE:
+  backbone: HGNetv2
+  encoder: HybridEncoder
+  decoder: DFINETransformer
+  mode: real
+  size: 800
+  height: 1088
+  width: 1920
+gpu_memory_limit_gib: 2.8
+optimizer:
+  lr: 0.00003
+  params:
+    - params: '^(?=.*decoder)(?=.*(?:norm|bn)).*$'
+      weight_decay: 0.0
