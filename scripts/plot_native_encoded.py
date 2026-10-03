@@ -25,8 +25,11 @@ def refresh():
  fig,axes=plt.subplots(2,3,figsize=(14,8))
  for n,rows in runs.items():
   label='Encoded detail' if n==NAMES[0] else 'Continuation control'
-  for ax,index,title in zip(list(axes.flat)[:5],[0,1,2,3,12],['mAP@50-95','AP50','AP75','Small AP','AP90']):
-   pairs=[(r['epoch'],100*r['validation']['coco_eval_bbox'][index]) for r in rows if len(r['validation'].get('coco_eval_bbox',[]))>index]
+  for ax,index,title in zip(list(axes.flat)[:5],[0,1,2,3,None],['mAP@50-95','AP50','AP75','Small AP','AP90']):
+   if index is None:
+    pairs=[(r['epoch'],100*r['validation']['ap_by_iou']['0.90']) for r in rows if r['validation'].get('ap_by_iou',{}).get('0.90') is not None]
+   else:
+    pairs=[(r['epoch'],100*r['validation']['coco_eval_bbox'][index]) for r in rows if len(r['validation'].get('coco_eval_bbox',[]))>index]
    if pairs:ax.plot(*zip(*pairs),marker='o',label=label)
    ax.set_title(title)
   pairs=[(r['epoch'],r['train']['loss']) for r in rows if 'loss' in r.get('train',{})]
