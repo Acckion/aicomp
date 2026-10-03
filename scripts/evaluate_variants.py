@@ -141,6 +141,13 @@ def main():
             identity['input_protocol']='native_rgb7_pil_bilinear_base_v1'
             identity['native_detail_mode']=args.native_detail_mode
             if args.native_detail_mode=='shuffle':identity['native_shuffle_seed']=20260929
+        elif config.yaml_cfg.get('model') == 'WholeFrameHeadDFINE':
+            assert args.native_detail_mode=='real','Whole-frame arms are selected by their model config'
+            from whole_frame_head import WholeFrameHeadDFINE
+            identity['input_protocol']=WholeFrameHeadDFINE.inference_input_protocol
+            settings=config.yaml_cfg['WholeFrameHeadDFINE']
+            identity['whole_frame_geometry']=[settings['height'],settings['width']]
+            identity['whole_frame_pixel_source']=settings['mode']
         else:
             assert args.native_detail_mode=='real','Detail ablation requires NativeEncodedDeltaDFINE'
         identity['resolved_model_config_sha256'] = hashlib.sha256(json.dumps(config.yaml_cfg,sort_keys=True,default=str).encode()).hexdigest()
