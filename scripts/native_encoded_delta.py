@@ -1,6 +1,6 @@
 """Prepared alternative: same-basis native detail, bounded before query selection.
 
-Not automatically trained. Regional original/low-detail views share a frozen
+Regional original/low-detail views share a frozen
 current encoder; their difference isolates pixel-detail changes from crop context.
 """
 import torch
@@ -14,6 +14,23 @@ import train_baseline as baseline
 
 @register()
 class NativeEncodedDeltaDFINE(DFINE):
+    inference_input_protocol = 'native_rgb7_pil_bilinear_base_v1'
+
+    def prepare_inference_input(self, image, size):
+        """Match NativeRGBCoco/Collate using the original, possibly flipped PIL view."""
+        import numpy as np
+        from PIL import Image
+        def tensor(im):
+            return torch.from_numpy(np.asarray(im).copy()).permute(2,0,1).float()/255
+        assert image.mode == 'RGB' and size > 0
+        w,h=image.size
+        packed=torch.zeros(1,7,max(h,self.size),max(w,self.size))
+        packed[0,:3,:self.size,:self.size]=tensor(image.resize((self.size,self.size),Image.Resampling.BILINEAR))
+        packed[0,3:6,:h,:w]=tensor(image)
+        packed[0,6,0,0]=h;packed[0,6,0,1]=w
+        self.forced_size=size
+        return packed
+
     def __init__(self, backbone, encoder, decoder, size=800, tile_size=800,
                  detail_enabled=True, residual_bound=.25):
         super().__init__(backbone,encoder,decoder)

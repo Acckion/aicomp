@@ -136,6 +136,8 @@ def main():
             if getattr(module,'__file__',None):
                 mechanism_hashes[name]=hashlib.sha256(Path(module.__file__).read_bytes()).hexdigest()
         if mechanism_hashes:identity['mechanism_source_sha256']=mechanism_hashes
+        if config.yaml_cfg.get('model') == 'NativeEncodedDeltaDFINE':
+            identity['input_protocol']='native_rgb7_pil_bilinear_base_v1'
         identity['resolved_model_config_sha256'] = hashlib.sha256(json.dumps(config.yaml_cfg,sort_keys=True,default=str).encode()).hexdigest()
     manifest=out/'cache_identity.json'
     if cache.exists():
@@ -165,10 +167,19 @@ def main():
                 for x,y,x2,y2 in views:
                     crop=image.crop((x,y,x2,y2))
                     # Two independent views of one checkpoint; restore flip before merge.
-                    tensor=TF.to_tensor(TF.resize(crop,[args.size,args.size])).unsqueeze(0).cuda()
-                    if args.backend=='deimv2':tensor=TF.normalize(tensor,[.485,.456,.406],[.229,.224,.225])
+                    native_input=getattr(model,'prepare_inference_input',None)
+                    if native_input is None:
+                        tensor=TF.to_tensor(TF.resize(crop,[args.size,args.size])).unsqueeze(0).cuda()
+                        if args.backend=='deimv2':tensor=TF.normalize(tensor,[.485,.456,.406],[.229,.224,.225])
+                    else:
+                        assert args.backend != 'deimv2'
+                        assert identity.get('input_protocol') == model.inference_input_protocol
                     for flipped in ([False,True] if args.flip_tta else [False]):
-                        inp=tensor.flip(-1) if flipped else tensor
+                        if native_input is None:
+                            inp=tensor.flip(-1) if flipped else tensor
+                        else:
+                            view=crop.transpose(Image.Transpose.FLIP_LEFT_RIGHT) if flipped else crop
+                            inp=native_input(view,args.size).cuda()
                         with torch.autocast('cuda',dtype=torch.float16,enabled=args.amp):
                             p=post(model(inp),torch.tensor([[x2-x,y2-y]],device='cuda'))[0]
                         if not args.tile and not args.flip_tta:
