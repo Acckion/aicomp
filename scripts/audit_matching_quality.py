@@ -1,5 +1,7 @@
 """Train-only fixed-model matching comparison; does not train or alter scores."""
 import fcntl
+import argparse
+import importlib
 import hashlib
 import json
 import os
@@ -18,39 +20,41 @@ from src.core import YAMLConfig
 
 
 @torch.no_grad()
-def main():
+def main(args):
     assert os.environ.get('CUDA_VISIBLE_DEVICES') == '4', 'Run with CUDA_VISIBLE_DEVICES=4; the lock protects physical GPU4.'
-    output = ROOT / 'experiments/matching_quality_audit'
+    output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
     lock = (ROOT / 'experiments/mechanism_trials/gpu4.lock').open('a')
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     (output / 'COMPLETE').unlink(missing_ok=True)
     torch.set_num_threads(2); torch.manual_seed(20261002)
-    torch.cuda.set_per_process_memory_fraction(3 * 2**30 / torch.cuda.get_device_properties(0).total_memory)
+    torch.cuda.set_per_process_memory_fraction(args.memory_gib * 2**30 / torch.cuda.get_device_properties(0).total_memory)
     torch.backends.cudnn.benchmark = False
-    cfg = YAMLConfig(str(ROOT / 'configs/rgb1600.yml'), eval_spatial_size=[800, 800])
+    cfg = YAMLConfig(args.config, eval_spatial_size=[800, 800])
+    for name in cfg.yaml_cfg.get('mechanism_imports',[]):importlib.import_module(name)
     model = cfg.model
-    path = ROOT / 'runs/ft_aug800/weights_epoch_020.pth'
+    path = Path(args.checkpoint)
     state = torch.load(path, map_location='cpu', weights_only=False)
+    if args.require_ema:assert 'ema' in state or state.get('source')=='EMA'
     weights = state['ema']['module'] if 'ema' in state else state['model']
     weights = {k: v for k, v in weights.items() if k not in ['decoder.anchors', 'decoder.valid_mask']}
     missing, extra = model.load_state_dict(weights, strict=False)
     assert not extra and set(missing) <= {'decoder.anchors', 'decoder.valid_mask'}
     model.cuda().eval(); matcher = cfg.criterion.matcher.cuda()
-    annotation = ROOT / 'data/annotations/train1600.json'
+    annotation = Path(args.annotations)
     data = json.loads(annotation.read_text())
     by_image = {m['id']: [] for m in data['images']}
     for a in data['annotations']:
         by_image[a['image_id']].append(a)
     # Fixed evenly spaced sample, not selected by observed errors.
-    indices = torch.linspace(0, len(data['images'])-1, 128).round().long().tolist()
+    indices = torch.linspace(0, len(data['images'])-1, min(args.images,len(data['images']))).round().long().tolist()
     records = []
     for index in indices:
         meta = data['images'][index]
         annotations = [a for a in by_image[meta['id']] if not a.get('iscrowd', 0)]
         if not annotations:
             continue
-        image = Image.open(ROOT / 'data/train' / meta['file_name']).convert('RGB')
+        image = Image.open(Path(args.image_root) / meta['file_name']).convert('RGB')
         assert image.size == (meta['width'], meta['height'])
         sample = TF.to_tensor(TF.resize(image, [800, 800])).unsqueeze(0).cuda()
         prediction = model(sample)
@@ -111,7 +115,8 @@ def main():
                             for c in data['categories']},
               'checkpoint_sha256': hashlib.file_digest(path.open('rb'), 'sha256').hexdigest(),
               'annotations_sha256': hashlib.sha256(annotation.read_bytes()).hexdigest(),
-              'notes': ['Evaluation-mode train1600 views, fixed parent model, no augmentations or gradients.',
+              'config': args.config, 'training_dataset_images':len(data['images']),
+              'notes': ['Evaluation-mode training views, fixed parent model, no augmentations or gradients.',
                         'Both assignments are one-to-one. GT is used for training-only mechanism analysis.',
                         'Higher assigned IoU is not a measured AP improvement. Encoder/GO/DN changes need separate tests.',
                         'No test input, corrected predictions or submission packages.']}
@@ -122,4 +127,14 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    parser=argparse.ArgumentParser()
+    parser.add_argument('--checkpoint',default=str(ROOT/'runs/ft_aug800/weights_epoch_020.pth'))
+    parser.add_argument('--config',default=str(ROOT/'configs/rgb1600.yml'))
+    parser.add_argument('--annotations',default=str(ROOT/'data/annotations/train1600.json'))
+    parser.add_argument('--image-root',default=str(ROOT/'data/train'))
+    parser.add_argument('--output',default=str(ROOT/'experiments/matching_quality_audit'))
+    parser.add_argument('--images',type=int,default=128)
+    parser.add_argument('--memory-gib',type=float,default=3)
+    parser.add_argument('--require-ema',action='store_true')
+    args=parser.parse_args();assert args.images>0 and args.memory_gib>0
+    main(args)
